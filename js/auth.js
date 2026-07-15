@@ -82,7 +82,7 @@ async function mmmTeacherSignup({ email, password, display_name, class_name }) {
  * is approved. Shows a clear message for pending/rejected/wrong-role
  * accounts instead of silently letting them in.
  */
-function mmmInitLoginForm({ formId, errorId, requiredRole, onSuccess }) {
+function mmmInitLoginForm({ formId, errorId, requiredRole, onSuccess, onNeedsProfile }) {
     const form = document.getElementById(formId);
     const errorEl = document.getElementById(errorId);
 
@@ -96,8 +96,24 @@ function mmmInitLoginForm({ formId, errorId, requiredRole, onSuccess }) {
     }
 
     async function tryEnter() {
+        const session = await mmmGetSession();
+        if (!session) return false;
+
         const profile = await mmmGetProfile();
-        if (!profile) return false;
+
+        if (!profile) {
+            // Signed in (auth account exists), but no profile row — this
+            // happens when "Confirm email" was on and the original signup
+            // form never got to create the profile. Let the caller offer
+            // a "finish setting up" form instead of just failing silently.
+            if (requiredRole === 'teacher' && onNeedsProfile) {
+                onNeedsProfile();
+                return true;
+            }
+            showError('No profile found for this account. Contact your admin.');
+            await sb.auth.signOut();
+            return false;
+        }
 
         if (profile.role !== requiredRole) {
             showError(requiredRole === 'admin'
@@ -145,4 +161,32 @@ function mmmInitLoginForm({ formId, errorId, requiredRole, onSuccess }) {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Sign In';
     });
+}
+
+/**
+ * Creates the missing profile row for the currently signed-in user —
+ * used to recover a signup that got interrupted by an email confirmation
+ * step (see mmmInitLoginForm's onNeedsProfile above).
+ */
+async function mmmCreateProfileForCurrentUser({ display_name, class_name }) {
+    const session = await mmmGetSession();
+    if (!session) throw new Error('Not signed in.');
+
+    let lastErr = null;
+    let code = mmmGenerateClassCode();
+    for (let attempt = 0; attempt < 5; attempt++) {
+        const { error } = await sb.from('profiles').insert({
+            id: session.user.id,
+            email: session.user.email,
+            role: 'teacher',
+            status: 'pending',
+            display_name,
+            class_name,
+            class_code: code
+        });
+        lastErr = error;
+        if (!error) return;
+        code = mmmGenerateClassCode(); // in case of a rare class_code collision
+    }
+    throw new Error(lastErr ? lastErr.message : 'Could not create profile.');
 }

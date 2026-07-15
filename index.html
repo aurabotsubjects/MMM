@@ -75,6 +75,29 @@
         </form>
         <p class="auth-note"><a href="#" onclick="showLoginCard();return false;">← Back to sign in</a></p>
     </div>
+
+    <div class="auth-card hidden" id="finishProfileCard">
+        <div class="auth-logo">
+            <div class="logo-badge">MMM</div>
+            <div>
+                <h1>Finish Setting Up</h1>
+                <span class="logo-sub">Almost there — just a couple more details</span>
+            </div>
+        </div>
+        <p class="auth-note" style="margin-top:0;margin-bottom:16px;">Your email is confirmed — finish your request below and your admin will be able to approve it.</p>
+        <div class="auth-error" id="finishProfileError"></div>
+        <form id="finishProfileForm">
+            <div class="auth-field">
+                <label for="finishName">Your name</label>
+                <input type="text" id="finishName" required>
+            </div>
+            <div class="auth-field">
+                <label for="finishClass">Class name</label>
+                <input type="text" id="finishClass" placeholder="e.g. Room 12 / Period 3" required>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%;padding:11px;">Send Request</button>
+        </form>
+    </div>
 </div>
 
 <!-- ══════════════════════════════════════
@@ -360,12 +383,44 @@
 <script>
     function showSignupCard() {
         document.getElementById('loginCard').classList.add('hidden');
+        document.getElementById('finishProfileCard').classList.add('hidden');
         document.getElementById('signupCard').classList.remove('hidden');
     }
     function showLoginCard() {
         document.getElementById('signupCard').classList.add('hidden');
+        document.getElementById('finishProfileCard').classList.add('hidden');
         document.getElementById('loginCard').classList.remove('hidden');
     }
+    function showFinishProfileCard() {
+        document.getElementById('loginCard').classList.add('hidden');
+        document.getElementById('signupCard').classList.add('hidden');
+        document.getElementById('finishProfileCard').classList.remove('hidden');
+    }
+
+    document.getElementById('finishProfileForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const errorEl = document.getElementById('finishProfileError');
+        errorEl.classList.remove('show');
+
+        const display_name = document.getElementById('finishName').value.trim();
+        const class_name = document.getElementById('finishClass').value.trim();
+        const btn = e.target.querySelector('button[type="submit"]');
+        btn.disabled = true; btn.textContent = 'Sending…';
+
+        try {
+            await mmmCreateProfileForCurrentUser({ display_name, class_name });
+            await sb.auth.signOut();
+            showLoginCard();
+            const authErrorEl = document.getElementById('authError');
+            authErrorEl.textContent = 'Request sent! Your admin needs to approve your account before you can sign in.';
+            authErrorEl.classList.add('show');
+        } catch (err) {
+            errorEl.textContent = err.message || 'Could not create the account.';
+            errorEl.classList.add('show');
+        } finally {
+            btn.disabled = false; btn.textContent = 'Send Request';
+        }
+    });
 
     async function doForgotPassword() {
         const email = document.getElementById('authEmail').value.trim();
@@ -395,7 +450,7 @@
             document.getElementById('signupForm').classList.add('hidden');
             successEl.classList.remove('hidden');
             successEl.textContent = result.needsEmailConfirm
-                ? `We've sent a confirmation link to ${email}. Click it, then come back and sign up again to finish creating your account.`
+                ? `We've sent a confirmation link to ${email}. Click it, then come back here and sign in — you'll be asked for your name and class to finish the request.`
                 : 'Request sent! Your admin needs to approve your account before you can sign in.';
         } catch (err) {
             errorEl.textContent = err.message || 'Could not create the account.';
@@ -409,6 +464,9 @@
         formId: 'authForm',
         errorId: 'authError',
         requiredRole: 'teacher',
+        onNeedsProfile: () => {
+            showFinishProfileCard();
+        },
         onSuccess: (profile) => {
             document.getElementById('authScreen').classList.add('hidden');
             document.getElementById('appScreen').classList.remove('hidden');
