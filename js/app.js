@@ -3,14 +3,14 @@
 // ─────────────────────────────────────────
 const CONFIGS = {
     skills: {
-        // 'type' sent to the Cloudflare Worker, which maps it to the right R2 file
-        workerType: 'skills',
+        // path inside the R2 bucket
+        r2Path: 'MMM/MMM Skills for Printing.pdf',
         mapping: "8:1,9:2,10:3,11:4,12:5,13:6,14:7,15:8,16:9,17:10,18:11,19:13,20:15,21:17,22:19,23:21,24:22,25:23,26:24,27:25,28:26,29:27,30:28,31:29,32:30,33:31,34:32,35:33,36:34,37:35,38:36,39:37,40:38,41:39,42:40,43:41,44:42,45:43,46:44,47:45,48:46,49:47,50:48",
         footer: 'Pages selected from "MMM Skills for Printing.pdf"',
         downloadName: 'Custom_MMM_Skills.pdf'
     },
     tests: {
-        workerType: 'tests',
+        r2Path: 'MMM/Mad Math Minute Tests.pdf',
         mapping: "8_9:1,10_11:2,12_13:3,14_15:4,16_17:5,18_19:6,20_21:7,22_23:8,24_25:9,26_27:10,28_29:11,30_31:12,32_33:13,34_35:14,36_37:15,38_39:16,40_41:17,42_43:18,44_45:19,46_47:20,48_49:21,50_50:22",
         footer: 'Pages selected from "Mad Math Minute Tests.pdf"',
         downloadName: 'Custom_MMM_Tests.pdf'
@@ -485,21 +485,16 @@ function showError(msg) {
     setTimeout(() => el.classList.add('hidden'), 4000);
 }
 
-// Automatically pulls the correct PDF from the Cloudflare Worker (which reads
-// it from the private R2 bucket) — no manual file picking required.
+// Automatically pulls the correct PDF straight from R2's public URL —
+// no manual file picking, no server involved.
 async function attemptAutoLoad() {
-    const type = CONFIGS[currentPrintType].workerType;
+    const path = CONFIGS[currentPrintType].r2Path;
     const statusEl = document.getElementById('pdf-status');
-    statusEl.innerHTML = `Connecting to "${type === 'skills' ? 'MMM Skills for Printing.pdf' : 'Mad Math Minute Tests.pdf'}"…`;
+    statusEl.innerHTML = `Connecting to "${path.split('/').pop()}"…`;
 
     try {
-        const session = await mmmGetSession();
-        if (!session) throw new Error('not_signed_in');
-
-        const url = `${window.MMM_CONFIG.PDF_WORKER_URL}/?type=${type}`;
-        const res = await fetch(url, {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
+        const url = `${window.MMM_CONFIG.R2_PUBLIC_URL}/${encodeURI(path)}`;
+        const res = await fetch(url);
         if (!res.ok) throw new Error('fetch_failed');
 
         originalPdfBytes = await res.arrayBuffer();

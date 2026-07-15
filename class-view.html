@@ -293,7 +293,8 @@ async function printPracticeSheet() {
 
     try {
         if (!currentSkillsPdfBytes) {
-            const res = await fetch(`${window.MMM_CONFIG.PDF_WORKER_URL}/?type=skills`);
+            const url = `${window.MMM_CONFIG.R2_PUBLIC_URL}/${encodeURI('MMM/MMM Skills for Printing.pdf')}`;
+            const res = await fetch(url);
             if (!res.ok) throw new Error('fetch_failed');
             currentSkillsPdfBytes = await res.arrayBuffer();
         }

@@ -12,7 +12,8 @@ window.MMM_CONFIG = {
   // Supabase "anon" public API key (Project Settings → API)
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4YmlicWV6ZXBwempnamFvd2h6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwODcwMzksImV4cCI6MjA5OTY2MzAzOX0.oL-r0TybMVkwuWPeDH3onSJZ3envQqhHVnWduzVx9XA",
 
-  // URL of your deployed Cloudflare Worker (PDF proxy)
-  // e.g. "https://mmm-pdf-proxy.your-subdomain.workers.dev"
-  PDF_WORKER_URL: "https://mmm-pdf-proxy.YOUR-SUBDOMAIN.workers.dev"
+  // Your R2 bucket's public URL (Cloudflare dashboard → your bucket →
+  // Settings → Public Access). PDFs are fetched straight from here —
+  // no server or Worker involved.
+  R2_PUBLIC_URL: "https://pub-c9d54ec1efa04cfeaa3041eebb9144db.r2.dev"
 };
