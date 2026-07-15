@@ -550,6 +550,21 @@ async function generatePDF() {
             a.download = CONFIGS[currentPrintType].downloadName;
             a.click();
         };
+        document.getElementById('print-btn').onclick = () => {
+            const frame = document.getElementById('pdf-preview-frame');
+            try {
+                frame.contentWindow.focus();
+                frame.contentWindow.print();
+            } catch (err) {
+                // Fallback: open the PDF in a new tab and print from there
+                const printWin = window.open(url, '_blank');
+                if (printWin) {
+                    printWin.addEventListener('load', () => printWin.print());
+                } else {
+                    showError('Please allow pop-ups to print, or use Download instead.');
+                }
+            }
+        };
 
         document.getElementById('pdf-overlay').classList.add('active');
     } catch (err) {
