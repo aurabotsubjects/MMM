@@ -41,28 +41,31 @@ export default {
             });
         }
 
-        // Require a valid, signed-in Supabase session (teacher or admin).
-        const authHeader = request.headers.get("Authorization") || "";
-        const token = authHeader.replace("Bearer ", "");
-        if (!token) {
-            return new Response(JSON.stringify({ error: "missing_token" }), {
-                status: 401,
-                headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-        }
+        // Practice/skills sheets are safe for students/parents to print directly —
+        // no login required. Friday tests stay teacher-only.
+        if (type === "tests") {
+            const authHeader = request.headers.get("Authorization") || "";
+            const token = authHeader.replace("Bearer ", "");
+            if (!token) {
+                return new Response(JSON.stringify({ error: "missing_token" }), {
+                    status: 401,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                });
+            }
 
-        const verifyRes = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-            headers: {
-                Authorization: `Bearer ${token}`,
-                apikey: env.SUPABASE_ANON_KEY,
-            },
-        });
-
-        if (!verifyRes.ok) {
-            return new Response(JSON.stringify({ error: "invalid_token" }), {
-                status: 401,
-                headers: { ...corsHeaders, "Content-Type": "application/json" },
+            const verifyRes = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    apikey: env.SUPABASE_ANON_KEY,
+                },
             });
+
+            if (!verifyRes.ok) {
+                return new Response(JSON.stringify({ error: "invalid_token" }), {
+                    status: 401,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                });
+            }
         }
 
         const object = await env.MMM_BUCKET.get(key);

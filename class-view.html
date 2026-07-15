@@ -6,6 +6,7 @@
     <title>MMM Class Results</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -33,17 +34,99 @@
     <div id="classViewResult" class="class-view-board"></div>
 </div>
 
+<!-- Student detail modal (score history + chart + practice sheet) -->
+<div class="student-detail-overlay no-print" id="student-detail-overlay" onclick="closeStudentDetail(event)">
+    <div class="student-detail-modal" id="student-detail-modal">
+        <div class="sdm-header">
+            <div class="sdm-avatar" id="sdm-avatar"></div>
+            <div>
+                <div class="sdm-name" id="sdm-name"></div>
+                <div class="sdm-sub" id="sdm-sub"></div>
+            </div>
+            <div class="sdm-actions">
+                <button class="btn btn-secondary" style="font-size:13px;" id="sdm-print-btn" onclick="printPracticeSheet()">🖨️ Print Practice Sheet</button>
+                <button class="btn btn-secondary" style="font-size:13px;" onclick="closeStudentDetail()">✕ Close</button>
+            </div>
+        </div>
+        <div class="sdm-body">
+            <div class="sdm-stats" id="sdm-stats"></div>
+            <div class="sdm-chart-wrap">
+                <h4>Score Progress Over Time</h4>
+                <canvas id="sdm-chart" height="180"></canvas>
+            </div>
+            <div class="sdm-history">
+                <h4>Score History</h4>
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Skill Tested</th>
+                            <th>Score</th>
+                            <th>Accuracy</th>
+                            <th>Result</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sdm-history-body"></tbody>
+                </table>
+            </div>
+            <p class="sdm-note">Scores of 15/15 automatically advance to the next skill. The practice sheet above matches your current skill — ask your teacher if you're not sure which one that is.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Practice sheet preview -->
+<div class="pdf-overlay" id="pdf-overlay">
+    <div class="pdf-overlay-header">
+        <h2>📄 Your Practice Sheet</h2>
+        <div class="pdf-overlay-actions">
+            <button class="btn btn-secondary" onclick="closePracticePreview()">← Back</button>
+            <button class="btn btn-green" id="practice-download-btn">⬇ Download / Print</button>
+        </div>
+    </div>
+    <div class="pdf-body">
+        <iframe id="practice-preview-frame" src=""></iframe>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
 <script src="js/config.js"></script>
 <script src="js/supabaseClient.js"></script>
 <script>
-const colorForPosition = (p) => {
-    if (p <= 8) return '#e67e50';
-    if (p <= 15) return '#8fb369';
-    if (p <= 28) return '#6b9ac4';
-    if (p <= 37) return '#f4d35e';
-    return '#8b7ba8';
-};
-const initials = (name) => name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+// Position → page number in "MMM Skills for Printing.pdf" (only positions 8+ have a
+// printable practice sheet in this document — earlier skills aren't in this PDF).
+const SKILLS_PAGE_MAP = {};
+"8:1,9:2,10:3,11:4,12:5,13:6,14:7,15:8,16:9,17:10,18:11,19:13,20:15,21:17,22:19,23:21,24:22,25:23,26:24,27:25,28:26,29:27,30:28,31:29,32:30,33:31,34:32,35:33,36:34,37:35,38:36,39:37,40:38,41:39,42:40,43:41,44:42,45:43,46:44,47:45,48:46,49:47,50:48"
+    .split(',').forEach(pair => { const [pos, page] = pair.split(':'); SKILLS_PAGE_MAP[parseInt(pos)] = parseInt(page); });
+
+let currentClassStudents = [];
+let currentDetailIndex = null;
+let currentSkillsPdfBytes = null;
+
+const COLOR_PALETTE = ['#e67e50','#8fb369','#6b9ac4','#8b7ba8','#f4a261','#2a9d8f','#e9c46a','#e76f51'];
+function getStudentColor(name) {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return COLOR_PALETTE[Math.abs(hash) % COLOR_PALETTE.length];
+}
+function initials(name) { return name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase(); }
+function formatDate(iso) {
+    if (!iso) return '—';
+    const [y,m,d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+}
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+function showToast(msg, green=false) {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.className = 'toast' + (green ? ' green' : '');
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+}
 
 async function loadClassView() {
     const code = document.getElementById('classCodeInput').value.trim();
@@ -59,17 +142,19 @@ async function loadClassView() {
     }
 
     const { class_name, students } = data;
-    if (!students || students.length === 0) {
+    currentClassStudents = students || [];
+
+    if (currentClassStudents.length === 0) {
         resultEl.innerHTML = `<h2 style="margin-bottom:12px;">${escapeHtml(class_name || 'Class')}</h2><div class="loading-spinner">No students added yet.</div>`;
         return;
     }
 
-    const rows = students.map(s => {
-        const color = colorForPosition(s.position);
+    const rows = currentClassStudents.map((s, idx) => {
+        const color = getStudentColor(s.name);
         const last = s.last_score !== null && s.last_score !== undefined ? `Last: ${s.last_score}/15` : 'No tests yet';
         const avg = s.avg_score !== null && s.avg_score !== undefined ? ` · Avg: ${s.avg_score}` : '';
         return `
-            <div class="student-row-card">
+            <div class="student-row-card" style="cursor:pointer;" onclick="openStudentDetail(${idx})">
                 <div class="avatar" style="background:${color}">${initials(s.name)}</div>
                 <div class="info">
                     <div class="name">${escapeHtml(s.name)}</div>
@@ -80,12 +165,166 @@ async function loadClassView() {
         `;
     }).join('');
 
-    resultEl.innerHTML = `<h2 style="margin-bottom:12px;">${escapeHtml(class_name || 'Class')}</h2>${rows}`;
+    resultEl.innerHTML = `<h2 style="margin-bottom:4px;">${escapeHtml(class_name || 'Class')}</h2>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">Click a name to see score history and print a practice sheet.</p>
+        ${rows}`;
 }
 
-function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+// ── Student detail modal ─────────────────────────────
+function openStudentDetail(idx) {
+    currentDetailIndex = idx;
+    const s = currentClassStudents[idx];
+    const records = s.records || [];
+    const color = getStudentColor(s.name);
+    const scores = records.map(r => r.score);
+    const avg = scores.length ? (scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1) : '—';
+    const accuracy = scores.length ? Math.round((scores.reduce((a,b)=>a+b,0)/(scores.length*15))*100) + '%' : '—';
+    const best = scores.length ? Math.max(...scores) : '—';
+    const trend = scores.length>=2 ? (scores[scores.length-1]>=scores[scores.length-2]?'↑':'↓') : '—';
+
+    document.getElementById('sdm-avatar').style.background = color;
+    document.getElementById('sdm-avatar').textContent = initials(s.name);
+    document.getElementById('sdm-name').textContent = s.name;
+    document.getElementById('sdm-sub').textContent = `Skill ${s.position} · ${records.length} test${records.length!==1?'s':''} recorded`;
+
+    document.getElementById('sdm-stats').innerHTML =
+        `<div class="sdm-stat"><div class="val">${avg}</div><div class="lbl">Average</div></div>` +
+        `<div class="sdm-stat"><div class="val">${best==='—'?'—':best+'/15'}</div><div class="lbl">Best</div></div>` +
+        `<div class="sdm-stat"><div class="val">${accuracy}</div><div class="lbl">Accuracy</div></div>` +
+        `<div class="sdm-stat"><div class="val" style="color:${trend==='↑'?'#5a8a3a':trend==='↓'?'#e05c3a':'#999'}">${trend}</div><div class="lbl">Trend</div></div>`;
+
+    drawDetailChart(records, color);
+
+    const tbody = document.getElementById('sdm-history-body');
+    tbody.innerHTML = '';
+    if (records.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No scores recorded yet</td></tr>';
+    } else {
+        records.slice().reverse().forEach(rec => {
+            const cls = rec.score===15?'perfect':rec.score>=12?'high':rec.score>=8?'mid':'low';
+            const result = rec.score===15?'🌟 Perfect!':rec.score>=12?'✅ Great':rec.score>=8?'👍 Good':'📚 Needs work';
+            const acc = Math.round((rec.score/15)*100) + '%';
+            const adv = rec.advanced ? '<span class="advanced-badge">⬆ Advanced</span>' : '';
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+                `<td>${formatDate(rec.date)}</td>` +
+                `<td>Skill ${rec.skill}</td>` +
+                `<td><span class="score-pill ${cls}">${rec.score}/15</span>${adv}</td>` +
+                `<td>${acc}</td>` +
+                `<td>${result}</td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    document.getElementById('sdm-print-btn').disabled = !SKILLS_PAGE_MAP[s.position];
+    document.getElementById('sdm-print-btn').title = SKILLS_PAGE_MAP[s.position]
+        ? '' : 'No printable practice sheet available for this skill yet';
+
+    document.getElementById('student-detail-overlay').classList.add('active');
+}
+
+function drawDetailChart(records, color) {
+    const canvas = document.getElementById('sdm-chart');
+    if (!canvas) return;
+    const w = canvas.offsetWidth||580, h = 180;
+    canvas.width=w*2; canvas.height=h*2; canvas.style.width=w+'px'; canvas.style.height=h+'px';
+    const ctx=canvas.getContext('2d'); ctx.scale(2,2);
+    const padL=36,padR=16,padT=16,padB=48,cw=w-padL-padR,ch=h-padT-padB;
+
+    [0,5,10,15].forEach((v) => {
+        const y=padT+ch*(1-v/15);
+        ctx.beginPath(); ctx.strokeStyle=v===15?'#8fb36944':'#e0d8cc';
+        ctx.lineWidth=v===15?1.5:1; ctx.setLineDash(v===15?[]:[3,3]);
+        ctx.moveTo(padL,y); ctx.lineTo(padL+cw,y); ctx.stroke(); ctx.setLineDash([]);
+        ctx.font='10px "DM Mono",monospace'; ctx.fillStyle=v===15?'#5a8a3a':'#aaa';
+        ctx.textAlign='right'; ctx.fillText(v,padL-6,y+4);
+    });
+    ctx.font='9px Nunito,sans-serif'; ctx.fillStyle='#5a8a3a'; ctx.textAlign='left';
+    ctx.fillText('PASS',padL+4,padT+4);
+
+    if (records.length===0) {
+        ctx.font='14px Nunito,sans-serif'; ctx.fillStyle='#aaa'; ctx.textAlign='center';
+        ctx.fillText('No scores yet',w/2,h/2); return;
+    }
+
+    const points=records.map(r=>({x:formatDate(r.date),y:r.score}));
+    if (points.length===1) {
+        const x=padL+cw/2,y=padT+ch*(1-points[0].y/15);
+        ctx.beginPath(); ctx.arc(x,y,6,0,Math.PI*2); ctx.fillStyle=color; ctx.fill(); return;
+    }
+    const xStep=cw/(points.length-1);
+    ctx.beginPath();
+    points.forEach((p,i)=>{const x=padL+i*xStep,y=padT+ch*(1-p.y/15);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+    ctx.lineTo(padL+(points.length-1)*xStep,padT+ch); ctx.lineTo(padL,padT+ch); ctx.closePath();
+    ctx.fillStyle=color+'28'; ctx.fill();
+    ctx.beginPath();
+    points.forEach((p,i)=>{const x=padL+i*xStep,y=padT+ch*(1-p.y/15);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+    ctx.strokeStyle=color; ctx.lineWidth=2.5; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.stroke();
+    points.forEach((p,i)=>{
+        const x=padL+i*xStep,y=padT+ch*(1-p.y/15);
+        ctx.beginPath(); ctx.arc(x,y,p.y===15?6:4,0,Math.PI*2);
+        ctx.fillStyle=p.y===15?'#5a8a3a':color; ctx.fill();
+        ctx.strokeStyle='white'; ctx.lineWidth=2; ctx.stroke();
+        ctx.font='bold 10px "DM Mono",monospace'; ctx.fillStyle=p.y===15?'#5a8a3a':color;
+        ctx.textAlign='center'; ctx.fillText(p.y,x,y-9);
+        ctx.font='9px Nunito,sans-serif'; ctx.fillStyle='#aaa';
+        if (points.length>5) {
+            ctx.save(); ctx.translate(x,padT+ch+14); ctx.rotate(-Math.PI/4);
+            ctx.textAlign='right'; ctx.fillText(p.x,0,0); ctx.restore();
+        } else { ctx.textAlign='center'; ctx.fillText(p.x,x,padT+ch+16); }
+    });
+}
+
+function closeStudentDetail(e) {
+    if (e && e.target !== document.getElementById('student-detail-overlay')) return;
+    document.getElementById('student-detail-overlay').classList.remove('active');
+    currentDetailIndex = null;
+}
+
+// ── Practice sheet printing (public — no login needed) ──────
+async function printPracticeSheet() {
+    if (currentDetailIndex === null) return;
+    const s = currentClassStudents[currentDetailIndex];
+    const page = SKILLS_PAGE_MAP[s.position];
+    if (!page) { showToast('No printable practice sheet for this skill yet'); return; }
+
+    const btn = document.getElementById('sdm-print-btn');
+    btn.disabled = true; btn.textContent = 'Loading…';
+
+    try {
+        if (!currentSkillsPdfBytes) {
+            const res = await fetch(`${window.MMM_CONFIG.PDF_WORKER_URL}/?type=skills`);
+            if (!res.ok) throw new Error('fetch_failed');
+            currentSkillsPdfBytes = await res.arrayBuffer();
+        }
+
+        const { PDFDocument } = PDFLib;
+        const origPdf = await PDFDocument.load(currentSkillsPdfBytes);
+        const newPdf = await PDFDocument.create();
+        const [copied] = await newPdf.copyPages(origPdf, [page - 1]);
+        newPdf.addPage(copied);
+        const bytes = await newPdf.save();
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+
+        document.getElementById('practice-preview-frame').src = url;
+        document.getElementById('practice-download-btn').onclick = () => {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${s.name.replace(/\s+/g,'_')}_practice_sheet.pdf`;
+            a.click();
+        };
+        document.getElementById('pdf-overlay').classList.add('active');
+    } catch (err) {
+        console.error(err);
+        showToast('Could not load the practice sheet — try again in a moment');
+    } finally {
+        btn.disabled = false; btn.textContent = '🖨️ Print Practice Sheet';
+    }
+}
+
+function closePracticePreview() {
+    document.getElementById('pdf-overlay').classList.remove('active');
+    document.getElementById('practice-preview-frame').src = '';
 }
 
 document.getElementById('classCodeInput').addEventListener('keypress', e => {

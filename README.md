@@ -123,6 +123,10 @@ These are all safe to commit publicly — none of them are secret keys.
 
 Commit and push. Your site is live.
 
+**If you're updating from an earlier version:** run `supabase/migration_class_view_history.sql`
+in the SQL Editor, and redeploy the Cloudflare Worker (`wrangler deploy` from `cloudflare-worker/`)
+so it picks up the change that lets students print their practice sheet without logging in.
+
 ---
 
 ## Using the app
@@ -144,8 +148,9 @@ Commit and push. Your site is live.
   You can also change your own admin password from here.
 - **Class results** (`class-view.html`): share the class code (shown on the teacher's
   header and in the admin table) with your class/parents. Anyone with the code can see
-  the whole class's current levels and recent scores — no login needed, and they can't
-  see or print the PDFs from this page.
+  the whole class's current levels — click a student's name to see their full score
+  history, a progress chart, and an accuracy percentage, and to print just their current
+  practice sheet (the Friday test PDF stays teacher-only and still requires signing in).
 
 ---
 
