@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MMM Class Results</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+    <div class="app-logo">
+        <div class="logo-badge">MMM</div>
+        <div>
+            <div class="logo-text">Mad Math Minute</div>
+            <div class="logo-sub">Class Results</div>
+        </div>
+    </div>
+    <div class="class-code-chip">
+        <a href="index.html" class="small-link">Teacher sign in →</a>
+    </div>
+</header>
+
+<div class="class-view-shell">
+    <div class="tracker-toolbar" style="justify-content:center;">
+        <input type="text" id="classCodeInput" placeholder="Enter class code…" style="max-width:220px;text-align:center;text-transform:uppercase;font-family:'DM Mono',monospace;font-weight:800;letter-spacing:2px;">
+        <button class="btn btn-primary" onclick="loadClassView()">View Results</button>
+    </div>
+
+    <div id="classViewResult" class="class-view-board"></div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/supabaseClient.js"></script>
+<script>
+const colorForPosition = (p) => {
+    if (p <= 8) return '#e67e50';
+    if (p <= 15) return '#8fb369';
+    if (p <= 28) return '#6b9ac4';
+    if (p <= 37) return '#f4d35e';
+    return '#8b7ba8';
+};
+const initials = (name) => name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+
+async function loadClassView() {
+    const code = document.getElementById('classCodeInput').value.trim();
+    const resultEl = document.getElementById('classViewResult');
+    if (!code) return;
+
+    resultEl.innerHTML = '<div class="loading-spinner">Looking up class…</div>';
+
+    const { data, error } = await sb.rpc('get_class_view', { p_code: code });
+    if (error || !data || data.error) {
+        resultEl.innerHTML = '<div class="loading-spinner">No class found for that code. Double-check with your teacher.</div>';
+        return;
+    }
+
+    const { class_name, students } = data;
+    if (!students || students.length === 0) {
+        resultEl.innerHTML = `<h2 style="margin-bottom:12px;">${escapeHtml(class_name || 'Class')}</h2><div class="loading-spinner">No students added yet.</div>`;
+        return;
+    }
+
+    const rows = students.map(s => {
+        const color = colorForPosition(s.position);
+        const last = s.last_score !== null && s.last_score !== undefined ? `Last: ${s.last_score}/15` : 'No tests yet';
+        const avg = s.avg_score !== null && s.avg_score !== undefined ? ` · Avg: ${s.avg_score}` : '';
+        return `
+            <div class="student-row-card">
+                <div class="avatar" style="background:${color}">${initials(s.name)}</div>
+                <div class="info">
+                    <div class="name">${escapeHtml(s.name)}</div>
+                    <div class="meta">${last}${avg} · ${s.tests_taken || 0} test${s.tests_taken===1?'':'s'} taken</div>
+                </div>
+                <div class="skill-pill">Skill ${s.position}</div>
+            </div>
+        `;
+    }).join('');
+
+    resultEl.innerHTML = `<h2 style="margin-bottom:12px;">${escapeHtml(class_name || 'Class')}</h2>${rows}`;
+}
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
+document.getElementById('classCodeInput').addEventListener('keypress', e => {
+    if (e.key === 'Enter') loadClassView();
+});
+</script>
+</body>
+</html>
