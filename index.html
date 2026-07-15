@@ -147,6 +147,10 @@
             <div class="tracker-toolbar">
                 <input type="text" id="newStudentName" placeholder="Enter student name…" />
                 <button class="btn btn-primary" onclick="addNewStudent()">+ Add Student</button>
+                <input type="file" id="importFileInput" accept="application/json" class="hidden" onchange="handleImportFileChosen(event)">
+                <button class="btn btn-secondary" onclick="document.getElementById('importFileInput').click()" title="Import a class exported from the old local version">
+                    📥 Import Class (JSON)
+                </button>
             </div>
 
             <div class="quick-print-bar">

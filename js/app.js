@@ -234,6 +234,116 @@ async function addNewStudent() {
     input.value = '';
 }
 
+// ─────────────────────────────────────────
+//  IMPORT FROM THE OLD LOCAL VERSION (JSON export)
+// ─────────────────────────────────────────
+function handleImportFileChosen(event) {
+    const file = event.target.files[0];
+    event.target.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+    importClassData(file);
+}
+
+async function importClassData(file) {
+    let payload;
+    try {
+        const text = await file.text();
+        payload = JSON.parse(text);
+    } catch (err) {
+        showToast('That file is not a valid export — could not read it');
+        return;
+    }
+
+    const importStudents = Array.isArray(payload.students) ? payload.students : [];
+    const importScores = payload.scoreRecords && typeof payload.scoreRecords === 'object' ? payload.scoreRecords : {};
+
+    if (importStudents.length === 0) {
+        showToast('No students found in that file');
+        return;
+    }
+
+    const totalScores = Object.values(importScores).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+    const ok = confirm(
+        `Import ${importStudents.length} student${importStudents.length !== 1 ? 's' : ''} and ${totalScores} score record${totalScores !== 1 ? 's' : ''} into this class?\n\n` +
+        `Students with a name matching someone already on your tracker will be matched up rather than duplicated, and only new score records will be added.`
+    );
+    if (!ok) return;
+
+    let studentsAdded = 0, studentsMatched = 0, scoresAdded = 0, scoresSkipped = 0;
+
+    for (const imp of importStudents) {
+        const name = (imp && imp.name ? String(imp.name) : '').trim();
+        if (!name) continue;
+        const importedPosition = Math.min(50, Math.max(1, parseInt(imp.position) || 1));
+
+        let studentId;
+        const existing = students.find(s => s.name.toLowerCase() === name.toLowerCase());
+
+        if (existing) {
+            studentId = existing.id;
+            studentsMatched++;
+            if (existing.position !== importedPosition) {
+                existing.position = importedPosition;
+                await updateStudentRow(existing.id, { position: importedPosition });
+            }
+        } else {
+            const { data: created, error } = await sb
+                .from('students')
+                .insert({ teacher_id: currentProfile.id, name, position: importedPosition })
+                .select('id, name, position')
+                .single();
+            if (error) { console.error(error); continue; }
+            students.push(created);
+            studentId = created.id;
+            studentsAdded++;
+        }
+
+        const records = Array.isArray(importScores[name]) ? importScores[name]
+            : Array.isArray(importScores[imp.name]) ? importScores[imp.name] : [];
+        const existingRecords = scoreRecords[name] || [];
+
+        for (const rec of records) {
+            if (!rec || !rec.date || typeof rec.score !== 'number') continue;
+            const isDuplicate = existingRecords.some(r => r.date === rec.date && r.skill === rec.skill && r.score === rec.score);
+            if (isDuplicate) { scoresSkipped++; continue; }
+
+            const { data: insertedRec, error: recErr } = await sb
+                .from('score_records')
+                .insert({
+                    teacher_id: currentProfile.id,
+                    student_id: studentId,
+                    student_name: name,
+                    test_date: rec.date,
+                    skill: parseInt(rec.skill) || importedPosition,
+                    score: parseInt(rec.score),
+                    advanced: !!rec.advanced
+                })
+                .select()
+                .single();
+            if (recErr) { console.error(recErr); continue; }
+
+            if (!scoreRecords[name]) scoreRecords[name] = [];
+            scoreRecords[name].push({
+                id: insertedRec.id, date: insertedRec.test_date, skill: insertedRec.skill,
+                score: insertedRec.score, advanced: insertedRec.advanced
+            });
+            scoreRecords[name].sort((a, b) => a.date.localeCompare(b.date));
+            scoresAdded++;
+        }
+    }
+
+    renderStudents();
+    renderScoresGrid();
+
+    showToast(
+        `Imported: ${studentsAdded} new student${studentsAdded !== 1 ? 's' : ''}` +
+        (studentsMatched > 0 ? `, ${studentsMatched} matched existing` : '') +
+        `, ${scoresAdded} score${scoresAdded !== 1 ? 's' : ''} added` +
+        (scoresSkipped > 0 ? `, ${scoresSkipped} duplicate${scoresSkipped !== 1 ? 's' : ''} skipped` : ''),
+        true
+    );
+}
+
 async function updateStudentRow(id, patch) {
     const { error } = await sb.from('students').update(patch).eq('id', id);
     if (error) { console.error(error); showToast('Could not save change'); }
