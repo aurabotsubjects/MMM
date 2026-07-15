@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MMM Classroom Tools</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     LOGIN SCREEN
+════════════════════════════════════════ -->
+<div class="auth-shell" id="authScreen">
+    <div class="auth-card" id="loginCard">
+        <div class="auth-logo">
+            <div class="logo-badge">MMM</div>
+            <div>
+                <h1>Mad Math Minute</h1>
+                <span class="logo-sub">Teacher Sign In</span>
+            </div>
+        </div>
+        <div class="auth-error" id="authError"></div>
+        <form id="authForm">
+            <div class="auth-field">
+                <label for="authEmail">Email</label>
+                <input type="email" id="authEmail" autocomplete="username" required>
+            </div>
+            <div class="auth-field">
+                <label for="authPassword">Password</label>
+                <input type="password" id="authPassword" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%;padding:11px;">Sign In</button>
+        </form>
+        <p class="auth-note">
+            <a href="#" onclick="showSignupCard();return false;">Request an account</a> ·
+            <a href="#" onclick="doForgotPassword();return false;">Forgot password?</a>
+        </p>
+        <p class="auth-note">Looking for class results? <a href="class-view.html">View by class code →</a></p>
+    </div>
+
+    <div class="auth-card hidden" id="signupCard">
+        <div class="auth-logo">
+            <div class="logo-badge">MMM</div>
+            <div>
+                <h1>Request a Teacher Account</h1>
+                <span class="logo-sub">Your admin will need to approve it</span>
+            </div>
+        </div>
+        <div class="auth-error" id="signupError"></div>
+        <div class="auth-note hidden" id="signupSuccess"></div>
+        <form id="signupForm">
+            <div class="auth-field">
+                <label for="signupName">Your name</label>
+                <input type="text" id="signupName" required>
+            </div>
+            <div class="auth-field">
+                <label for="signupClass">Class name</label>
+                <input type="text" id="signupClass" placeholder="e.g. Room 12 / Period 3" required>
+            </div>
+            <div class="auth-field">
+                <label for="signupEmail">Email</label>
+                <input type="email" id="signupEmail" autocomplete="username" required>
+            </div>
+            <div class="auth-field">
+                <label for="signupPassword">Choose a password</label>
+                <input type="password" id="signupPassword" minlength="6" autocomplete="new-password" required>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%;padding:11px;">Send Request</button>
+        </form>
+        <p class="auth-note"><a href="#" onclick="showLoginCard();return false;">← Back to sign in</a></p>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     TEACHER APP (hidden until signed in)
+════════════════════════════════════════ -->
+<div id="appScreen" class="hidden">
+
+    <header class="app-header">
+        <div class="app-logo">
+            <div class="logo-badge">MMM</div>
+            <div>
+                <div class="logo-text">Mad Math Minute</div>
+                <div class="logo-sub">Classroom Tools</div>
+            </div>
+        </div>
+        <nav class="tab-nav">
+            <button class="tab-btn active" onclick="switchTab('tracker')" id="tab-tracker">
+                📊 Student Tracker
+            </button>
+            <button class="tab-btn" onclick="switchTab('scores')" id="tab-scores">
+                ✏️ Test Scores
+            </button>
+            <button class="tab-btn" onclick="switchTab('printing')" id="tab-printing">
+                🖨️ Print Skills
+                <span class="badge-count hidden" id="print-badge">0</span>
+            </button>
+        </nav>
+        <div class="class-code-chip">
+            <div>
+                <div class="code-label" id="headerTeacherName">—</div>
+                <div style="font-size:11px;color:var(--text-muted);" id="headerClassName"></div>
+            </div>
+            <div>
+                <div class="code-label">Class Code</div>
+                <div class="code-value" id="headerClassCode">—</div>
+            </div>
+            <button class="tab-btn logout-btn" onclick="mmmLogout()">🚪 Sign Out</button>
+        </div>
+    </header>
+
+    <!-- ════════════════════════════════════
+         TAB 1: STUDENT TRACKER
+    ════════════════════════════════════ -->
+    <div class="tab-panel active" id="panel-tracker">
+        <div class="tracker-layout">
+
+            <div class="tracker-toolbar">
+                <input type="text" id="newStudentName" placeholder="Enter student name…" />
+                <button class="btn btn-primary" onclick="addNewStudent()">+ Add Student</button>
+            </div>
+
+            <div class="quick-print-bar">
+                <div class="quick-print-info">
+                    <strong>📋 Send to Print Tab</strong>
+                    <span>Auto-selects pages based on each student's current position</span>
+                </div>
+                <div class="doc-type-toggle">
+                    <button class="doc-toggle-btn active" id="trackerDocSkills" onclick="setTrackerDocType('skills')">Skills</button>
+                    <button class="doc-toggle-btn" id="trackerDocTests" onclick="setTrackerDocType('tests')">Tests</button>
+                </div>
+                <button class="btn-send-to-print" onclick="sendToPrintTab()">
+                    ✨ Select Pages from Students
+                </button>
+            </div>
+
+            <div class="board-wrap">
+                <div class="board" id="board"></div>
+                <div class="color-legend">
+                    <div class="legend-item"><div class="legend-dot" style="background:#e67e50"></div> 1–8</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#8fb369"></div> 9–15</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#6b9ac4"></div> 16–28</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#f4d35e"></div> 29–37</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#8b7ba8"></div> 38–50</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#ccc;border:1px solid #aaa"></div> Unavailable</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════
+         TAB 2: TEST SCORES
+    ════════════════════════════════════ -->
+    <div class="tab-panel" id="panel-scores">
+        <div class="scores-layout">
+            <div class="scores-top">
+                <h2>Test Scores</h2>
+                <button class="btn btn-secondary" onclick="printAllSummaries()" style="font-size:13px;">🖨️ Print All Summaries</button>
+            </div>
+
+            <div class="score-entry-bar">
+                <div class="field">
+                    <label>Test Date</label>
+                    <input type="date" id="scoreDate" />
+                </div>
+                <span class="auto-advance-note" style="margin-left:auto;">★ Score of 15 auto-advances student to next skill</span>
+            </div>
+
+            <div class="skills-table-wrap">
+                <div class="table-toolbar">
+                    <span style="font-size:13px;font-weight:700;color:var(--text-muted);">
+                        Type each student's score, then click Save All Scores.
+                    </span>
+                    <button class="btn btn-primary" style="font-size:13px;margin-left:auto;" onclick="saveAllScores()">
+                        💾 Save All Scores
+                    </button>
+                </div>
+                <div style="overflow-y:auto;max-height:480px;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:36px;">#</th>
+                                <th>Student</th>
+                                <th>Current Skill</th>
+                                <th>Score&nbsp;<span style="font-weight:600;text-transform:none;font-size:10px;">/15</span></th>
+                                <th>Last</th>
+                                <th>Avg</th>
+                                <th>Tests</th>
+                                <th style="width:36px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="scores-table-body">
+                            <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted);">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="score-cards-section" style="margin-top:28px;display:none;">
+                <h3 style="font-size:16px;font-weight:800;margin-bottom:14px;">📊 Student Progress — click a name to view details</h3>
+                <div class="students-grid" id="scores-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════
+         TAB 3: PRINTING
+    ════════════════════════════════════ -->
+    <div class="tab-panel" id="panel-printing">
+        <div class="print-layout">
+
+            <div class="print-header">
+                <h2>Skills Printing Tool</h2>
+                <div class="doc-type-selector">
+                    <button class="doc-type-btn active" onclick="setPrintDocType('skills')" id="printBtnSkills">MMM Skills</button>
+                    <button class="doc-type-btn" onclick="setPrintDocType('tests')" id="printBtnTests">Mad Math Minute Tests</button>
+                </div>
+            </div>
+
+            <div class="smart-banner">
+                <div class="smart-banner-icon">🎯</div>
+                <div class="smart-banner-text">
+                    <strong>Auto-select from Student Tracker</strong>
+                    <span id="smart-banner-desc">Checks each student's position and selects the right pages with correct copy counts automatically.</span>
+                </div>
+                <button class="btn-smart-select" onclick="smartSelectFromTracker()">Select from Students</button>
+            </div>
+
+            <div class="pdf-status-bar">
+                <span class="label">Source PDF:</span>
+                <span id="pdf-status">Waiting for file…</span>
+            </div>
+
+            <div class="skills-table-wrap">
+                <div class="table-toolbar">
+                    <div class="table-toolbar-left">
+                        <button class="btn btn-secondary" onclick="selectAll()" style="font-size:13px;padding:7px 14px;">Select All</button>
+                        <button class="btn btn-secondary" onclick="deselectAll()" style="font-size:13px;padding:7px 14px;">Clear All</button>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <span class="error-msg hidden" id="error-msg"></span>
+                        <button class="btn btn-primary" id="generate-btn" onclick="generatePDF()">
+                            Generate PDF ↗
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:50px">Print?</th>
+                                <th>Skill / Range</th>
+                                <th>Students at this skill</th>
+                                <th>Page</th>
+                                <th>Copies</th>
+                            </tr>
+                        </thead>
+                        <tbody id="skills-grid"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <p style="margin-top:12px;font-size:12px;color:var(--text-muted);text-align:center;" id="footer-text"></p>
+        </div>
+    </div>
+
+    <!-- ── Student Tracker Modal ── -->
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <h3 id="modalTitle"></h3>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="showRename()">✏️ Rename Student</button>
+                <button class="btn btn-secondary" onclick="showManualPlacement()">📍 Move to Position</button>
+                <button class="btn btn-red" onclick="deleteStudent()">🗑️ Delete Student</button>
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+            </div>
+            <div class="rename-section" id="renameSection" style="display:none;">
+                <label for="newName">New name:</label>
+                <input type="text" id="newName" />
+                <button class="btn btn-primary" style="margin-top:10px;width:100%;" onclick="renameStudent()">Save Name</button>
+            </div>
+            <div class="position-selector" id="positionSelector" style="display:none;">
+                <label for="manualPosition">Position (1–50):</label>
+                <input type="number" id="manualPosition" min="1" max="50" />
+                <button class="btn btn-primary" style="margin-top:10px;width:100%;" onclick="moveToPosition()">Move</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Student Detail Modal (Scores) ── -->
+    <div class="student-detail-overlay no-print" id="student-detail-overlay" onclick="closeStudentDetail(event)">
+        <div class="student-detail-modal" id="student-detail-modal">
+            <div class="sdm-header">
+                <div class="sdm-avatar" id="sdm-avatar"></div>
+                <div>
+                    <div class="sdm-name" id="sdm-name"></div>
+                    <div class="sdm-sub" id="sdm-sub"></div>
+                </div>
+                <div class="sdm-actions">
+                    <button class="btn btn-secondary" style="font-size:13px;" onclick="printStudentSummary()">🖨️ Print Summary</button>
+                    <button class="btn btn-secondary" style="font-size:13px;" onclick="closeStudentDetail()">✕ Close</button>
+                </div>
+            </div>
+            <div class="sdm-body">
+                <div class="sdm-stats" id="sdm-stats"></div>
+                <div class="sdm-chart-wrap">
+                    <h4>Score Progress Over Time</h4>
+                    <canvas id="sdm-chart" height="180"></canvas>
+                </div>
+                <div class="sdm-history">
+                    <h4>Score History</h4>
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Skill Tested</th>
+                                <th>Score</th>
+                                <th>Result</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="sdm-history-body"></tbody>
+                    </table>
+                </div>
+                <p class="sdm-note">Scores of 15/15 automatically advance the student one position on the tracker.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── PDF Preview Overlay ── -->
+    <div class="pdf-overlay" id="pdf-overlay">
+        <div class="pdf-overlay-header">
+            <h2>📄 Your Custom PDF is Ready</h2>
+            <div class="pdf-overlay-actions">
+                <button class="btn btn-secondary" onclick="closePreview()">← Back</button>
+                <button class="btn btn-green" id="download-btn">⬇ Download PDF</button>
+            </div>
+        </div>
+        <div class="pdf-body">
+            <iframe id="pdf-preview-frame" src=""></iframe>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/supabaseClient.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+    function showSignupCard() {
+        document.getElementById('loginCard').classList.add('hidden');
+        document.getElementById('signupCard').classList.remove('hidden');
+    }
+    function showLoginCard() {
+        document.getElementById('signupCard').classList.add('hidden');
+        document.getElementById('loginCard').classList.remove('hidden');
+    }
+
+    async function doForgotPassword() {
+        const email = document.getElementById('authEmail').value.trim();
+        if (!email) { alert('Type your email into the box above first, then click "Forgot password?" again.'); return; }
+        const { error } = await mmmResetPassword(email);
+        if (error) { alert('Could not send reset email: ' + error.message); return; }
+        alert(`If ${email} has an account, a password reset link has been sent.`);
+    }
+
+    document.getElementById('signupForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const errorEl = document.getElementById('signupError');
+        const successEl = document.getElementById('signupSuccess');
+        errorEl.classList.remove('show');
+        successEl.classList.add('hidden');
+
+        const display_name = document.getElementById('signupName').value.trim();
+        const class_name = document.getElementById('signupClass').value.trim();
+        const email = document.getElementById('signupEmail').value.trim();
+        const password = document.getElementById('signupPassword').value;
+
+        const btn = e.target.querySelector('button[type="submit"]');
+        btn.disabled = true; btn.textContent = 'Sending…';
+
+        try {
+            const result = await mmmTeacherSignup({ email, password, display_name, class_name });
+            document.getElementById('signupForm').classList.add('hidden');
+            successEl.classList.remove('hidden');
+            successEl.textContent = result.needsEmailConfirm
+                ? `We've sent a confirmation link to ${email}. Click it, then come back and sign up again to finish creating your account.`
+                : 'Request sent! Your admin needs to approve your account before you can sign in.';
+        } catch (err) {
+            errorEl.textContent = err.message || 'Could not create the account.';
+            errorEl.classList.add('show');
+        } finally {
+            btn.disabled = false; btn.textContent = 'Send Request';
+        }
+    });
+
+    mmmInitLoginForm({
+        formId: 'authForm',
+        errorId: 'authError',
+        requiredRole: 'teacher',
+        onSuccess: (profile) => {
+            document.getElementById('authScreen').classList.add('hidden');
+            document.getElementById('appScreen').classList.remove('hidden');
+            initApp(profile);
+        }
+    });
+</script>
+</body>
+</html>
