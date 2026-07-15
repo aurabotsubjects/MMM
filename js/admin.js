@@ -42,9 +42,11 @@ function renderPendingList(pending) {
         tr.innerHTML = `
             <td><strong>${escapeHtml(t.display_name)}</strong><br><span style="color:var(--text-muted);font-size:12px;">${escapeHtml(t.email)}</span></td>
             <td>${escapeHtml(t.class_name || '—')}</td>
-            <td style="white-space:nowrap;">
-                <button class="btn btn-primary" style="font-size:12px;padding:6px 12px;" onclick="approveTeacher('${t.id}')">✓ Approve</button>
-                <button class="btn btn-secondary" style="font-size:12px;padding:6px 12px;" onclick="declineTeacher('${t.id}')">✗ Decline</button>
+            <td style="min-width:170px;">
+                <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                    <button class="btn btn-primary" style="font-size:12px;padding:6px 12px;" onclick="approveTeacher('${t.id}')">✓ Approve</button>
+                    <button class="btn btn-secondary" style="font-size:12px;padding:6px 12px;" onclick="declineTeacher('${t.id}')">✗ Decline</button>
+                </div>
             </td>
         `;
         tbody.appendChild(tr);
@@ -68,11 +70,13 @@ function renderTeacherList(teachers) {
             <td>${escapeHtml(t.class_name || '—')}</td>
             <td><span class="code-value">${escapeHtml(t.class_code || '—')}</span></td>
             <td>${new Date(t.created_at).toLocaleDateString()}</td>
-            <td style="white-space:nowrap;">
-                <button class="icon-btn" title="Rename / edit class" onclick="openEditTeacher('${t.id}')">✏️</button>
-                <button class="icon-btn" title="Send password reset email" onclick="sendResetEmail('${escapeHtml(t.email)}')">📧</button>
-                <button class="icon-btn" title="Regenerate class code" onclick="regenerateCode('${t.id}')">🔄</button>
-                <button class="icon-btn" title="Remove access" onclick="deleteTeacher('${t.id}', '${escapeHtml(t.display_name)}')">🗑️</button>
+            <td style="min-width:130px;">
+                <div style="display:flex;flex-wrap:wrap;gap:2px;">
+                    <button class="icon-btn" title="Rename / edit class" onclick="openEditTeacher('${t.id}')">✏️</button>
+                    <button class="icon-btn" title="Send password reset email" onclick="sendResetEmail('${escapeHtml(t.email)}')">📧</button>
+                    <button class="icon-btn" title="Regenerate class code" onclick="regenerateCode('${t.id}')">🔄</button>
+                    <button class="icon-btn" title="Remove access" onclick="deleteTeacher('${t.id}', '${escapeHtml(t.display_name)}')">🗑️</button>
+                </div>
             </td>
         `;
         tbody.appendChild(tr);
