@@ -1,5 +1,4 @@
-    <style>
-        :root {
+:root {
             --orange: #e67e50;
             --green: #8fb369;
             --blue: #6b9ac4;
@@ -20,9 +19,30 @@
 
         body {
             font-family: 'Nunito', sans-serif;
-            background: var(--bg);
             color: var(--text);
             min-height: 100vh;
+            background:
+                radial-gradient(circle at 15% 20%, rgba(230,126,80,0.16) 0%, transparent 45%),
+                radial-gradient(circle at 85% 15%, rgba(107,154,196,0.16) 0%, transparent 50%),
+                radial-gradient(circle at 25% 85%, rgba(143,179,105,0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(139,123,168,0.15) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(244,211,94,0.10) 0%, transparent 60%),
+                var(--bg);
+            background-size: 180% 180%, 180% 180%, 180% 180%, 180% 180%, 180% 180%, 100% 100%;
+            background-attachment: fixed;
+            animation: watercolorDrift 45s ease-in-out infinite;
+        }
+
+        @keyframes watercolorDrift {
+            0%   { background-position: 0% 0%, 100% 0%, 0% 100%, 100% 100%, 50% 50%, 0 0; }
+            25%  { background-position: 20% 30%, 80% 20%, 20% 80%, 80% 70%, 55% 45%, 0 0; }
+            50%  { background-position: 40% 10%, 60% 40%, 40% 60%, 60% 90%, 45% 55%, 0 0; }
+            75%  { background-position: 10% 40%, 90% 10%, 10% 90%, 90% 60%, 50% 50%, 0 0; }
+            100% { background-position: 0% 0%, 100% 0%, 0% 100%, 100% 100%, 50% 50%, 0 0; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            body { animation: none; }
         }
 
         /* ── App Shell ── */
