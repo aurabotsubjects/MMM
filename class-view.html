@@ -31,25 +31,32 @@
         <button class="btn btn-primary" onclick="loadClassView()">View Results</button>
     </div>
 
+    <div id="classResultTabs" style="display:none;justify-content:center;gap:10px;margin:20px 0 16px;">
+        <button class="doc-type-btn active" id="resultsTabBtn" onclick="showResultsTab('results')">📊 Class Results</button>
+        <button class="doc-type-btn" id="basicFactsTabBtn" onclick="showResultsTab('basicfacts')">🧮 Basic Facts</button>
+    </div>
+
     <div id="classViewResult" class="class-view-board"></div>
 
-    <div id="bfCtaWrap" style="display:none;">
-        <div class="bf-cta-banner">
-            <div class="icon">🧮</div>
-            <div class="text">
-                <strong>Take a Basic Facts Test</strong>
-                <span>5 minutes, 100 questions — try to beat your last score!</span>
-            </div>
-            <button onclick="openBfQuizSetup()">Start</button>
-        </div>
+    <div id="bfTabPanel" style="display:none;">
+        <div class="skills-table-wrap" style="padding:18px;">
+            <p style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px;">Take or print a Basic Facts test — pick any term and week</p>
 
-        <p class="bf-section-title" style="cursor:pointer;" onclick="toggleBfPrintTool()">🖨️ Print a Basic Facts practice test ▾</p>
-        <div id="bfPrintToolWrap" style="display:none;">
+            <div class="bf-select-row" style="margin-bottom:14px;">
+                <select id="bfTabStudentSelect" onchange="updateBfTabButtons()">
+                    <option value="">Your name (only needed to take a test)…</option>
+                </select>
+            </div>
+
             <div id="bfViewTermTabs" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;"></div>
-            <div id="bfViewWeekTabs" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;"></div>
+            <div id="bfViewWeekTabs" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;"></div>
+
             <div id="bfViewPreviewGrid" style="display:none;">
-                <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:180px;overflow-y:auto;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;" id="bfViewPreviewChips"></div>
-                <button class="btn btn-primary" onclick="printBfViewTest()">🖨️ Preview &amp; Print</button>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:200px;overflow-y:auto;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:10px;margin-bottom:16px;" id="bfViewPreviewChips"></div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="btn btn-secondary" onclick="printBfViewTest()">🖨️ Print This Test</button>
+                    <button class="btn btn-primary" id="bfStartTestBtn" onclick="launchBfQuiz()" disabled>▶️ Start Test</button>
+                </div>
             </div>
         </div>
     </div>
@@ -164,21 +171,11 @@
 <div class="bf-quiz-overlay" id="bf-quiz-overlay">
     <div class="bf-quiz-shell">
 
-        <!-- Setup phase: choose your name -->
-        <div id="bfQuizSetupPhase">
-            <h2 style="text-align:center;margin-bottom:6px;">🧮 Basic Facts Test</h2>
-            <p style="text-align:center;color:var(--text-muted);font-size:13px;margin-bottom:20px;">Choose your name to start your assigned test.</p>
-            <div class="bf-select-row">
-                <select id="bfQuizStudentSelect"></select>
-            </div>
-            <div style="display:flex;gap:10px;justify-content:center;">
-                <button class="btn btn-secondary" onclick="closeBfQuiz()">Cancel</button>
-                <button class="btn btn-primary" id="bfQuizStartBtn" onclick="startBfQuiz()" disabled>Start Test</button>
-            </div>
-        </div>
-
         <!-- Quiz phase -->
         <div id="bfQuizActivePhase" style="display:none;">
+            <div style="text-align:right;margin-bottom:8px;">
+                <a href="#" onclick="closeBfQuiz();return false;" class="small-link">✕ Cancel test</a>
+            </div>
             <div class="bf-progress-text" id="bfProgressText"></div>
             <div class="bf-timer-bar"><div class="bf-timer-fill" id="bfTimerFill"></div></div>
             <div class="bf-timer-text" id="bfTimerText">5:00</div>
@@ -268,14 +265,28 @@ function showToast(msg, green=false) {
     setTimeout(() => t.classList.remove('show'), 3000);
 }
 
+let currentResultsTab = 'results';
+
+function showResultsTab(tab) {
+    currentResultsTab = tab;
+    document.getElementById('classViewResult').style.display = tab === 'results' ? '' : 'none';
+    document.getElementById('bfTabPanel').style.display = tab === 'basicfacts' ? '' : 'none';
+    document.getElementById('resultsTabBtn').classList.toggle('active', tab === 'results');
+    document.getElementById('basicFactsTabBtn').classList.toggle('active', tab === 'basicfacts');
+    if (tab === 'basicfacts' && !bfPrintToolInitialized) {
+        bfPrintToolInitialized = true;
+        initBfViewPrintTool();
+    }
+}
+
 async function loadClassView() {
     const code = document.getElementById('classCodeInput').value.trim();
     const resultEl = document.getElementById('classViewResult');
-    const ctaWrap = document.getElementById('bfCtaWrap');
+    const tabsEl = document.getElementById('classResultTabs');
     if (!code) return;
 
     resultEl.innerHTML = '<div class="loading-spinner">Looking up class…</div>';
-    ctaWrap.style.display = 'none';
+    tabsEl.style.display = 'none';
 
     const { data, error } = await sb.rpc('get_class_view', { p_code: code });
     if (error || !data || data.error) {
@@ -333,14 +344,13 @@ async function loadClassView() {
     if (bfRows.length) html += `<p class="bf-section-title">🧮 Basic Facts</p>` + bfRows.join('');
     resultEl.innerHTML = html;
 
-    // CTA + quiz dropdown + print tool only make sense if the class has Basic Facts students
+    tabsEl.style.display = 'flex';
     const bfStudents = currentClassStudents.filter(s => s.is_basic_facts);
-    if (bfStudents.length > 0) {
-        ctaWrap.style.display = 'block';
-        const select = document.getElementById('bfQuizStudentSelect');
-        select.innerHTML = '<option value="">Select your name…</option>' +
-            bfStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
-    }
+    const select = document.getElementById('bfTabStudentSelect');
+    select.innerHTML = '<option value="">Your name (only needed to take a test)…</option>' +
+        bfStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+
+    showResultsTab(currentResultsTab);
 }
 
 // ── Student detail modal ─────────────────────────────
@@ -520,19 +530,9 @@ document.getElementById('classCodeInput').addEventListener('keypress', e => {
 });
 
 // ═══════════════════════════════════════════
-//  BASIC FACTS — print-a-test tool
+//  BASIC FACTS — pick a test (used for both taking and printing)
 // ═══════════════════════════════════════════
 let bfPrintToolInitialized = false;
-
-function toggleBfPrintTool() {
-    const wrap = document.getElementById('bfPrintToolWrap');
-    const show = wrap.style.display === 'none';
-    wrap.style.display = show ? 'block' : 'none';
-    if (show && !bfPrintToolInitialized) {
-        bfPrintToolInitialized = true;
-        initBfViewPrintTool();
-    }
-}
 
 function initBfViewPrintTool() {
     const tabsEl = document.getElementById('bfViewTermTabs');
@@ -566,6 +566,7 @@ function selectBfViewTerm(term) {
         weekTabs.appendChild(btn);
     });
     document.getElementById('bfViewPreviewGrid').style.display = 'none';
+    updateBfTabButtons();
 }
 
 function selectBfViewWeek(term, week) {
@@ -580,6 +581,14 @@ function selectBfViewWeek(term, week) {
     const qs = BASIC_FACTS_DATA[term][week] || [];
     chipsEl.innerHTML = qs.map(q => `<span class="student-chip">${q.replace('x','×')} =</span>`).join('');
     grid.style.display = 'block';
+    updateBfTabButtons();
+}
+
+function updateBfTabButtons() {
+    const hasStudent = !!document.getElementById('bfTabStudentSelect').value;
+    const hasTermWeek = !!(bfViewTerm && bfViewWeek);
+    const startBtn = document.getElementById('bfStartTestBtn');
+    if (startBtn) startBtn.disabled = !(hasStudent && hasTermWeek);
 }
 
 const BF_WORKSHEET_STYLE = `
@@ -746,34 +755,20 @@ function drawBfChart(canvasId, attempts, valueFn, maxVal, color) {
 // ═══════════════════════════════════════════
 //  BASIC FACTS — taking the test
 // ═══════════════════════════════════════════
-function openBfQuizSetup() {
-    document.getElementById('bfQuizSetupPhase').style.display = 'block';
-    document.getElementById('bfQuizActivePhase').style.display = 'none';
-    document.getElementById('bfQuizSummaryPhase').style.display = 'none';
-    document.getElementById('bfQuizStudentSelect').value = '';
-    document.getElementById('bfQuizStartBtn').disabled = true;
-    document.getElementById('bf-quiz-overlay').classList.add('active');
-}
-
 function closeBfQuiz() {
     clearInterval(bfQuizTimerInterval);
     document.getElementById('bf-quiz-overlay').classList.remove('active');
     loadClassView(); // refresh so a just-submitted attempt shows immediately
 }
 
-document.getElementById('bfQuizStudentSelect').addEventListener('change', function() {
-    document.getElementById('bfQuizStartBtn').disabled = !this.value;
-});
-
-function startBfQuiz() {
-    const studentId = document.getElementById('bfQuizStudentSelect').value;
+function launchBfQuiz() {
+    const studentId = document.getElementById('bfTabStudentSelect').value;
     bfQuizStudent = currentClassStudents.find(s => s.id === studentId);
-    if (!bfQuizStudent) return;
+    if (!bfQuizStudent || !bfViewTerm || !bfViewWeek) return;
 
-    const term = bfQuizStudent.basic_facts_term || 1;
-    const week = bfQuizStudent.basic_facts_week || bfWeeksForTerm(term)[0];
+    const term = bfViewTerm, week = bfViewWeek;
     bfQuizQuestions = [...(BASIC_FACTS_DATA[term] && BASIC_FACTS_DATA[term][week] ? BASIC_FACTS_DATA[term][week] : [])];
-    if (bfQuizQuestions.length === 0) { showToast('No test is set up for this student yet — ask your teacher.'); return; }
+    if (bfQuizQuestions.length === 0) { showToast('That test is not available'); return; }
 
     bfQuizIndex = 0;
     bfQuizCorrect = 0;
@@ -783,9 +778,9 @@ function startBfQuiz() {
     bfQuizStudent._term = term;
     bfQuizStudent._week = week;
 
-    document.getElementById('bfQuizSetupPhase').style.display = 'none';
     document.getElementById('bfQuizActivePhase').style.display = 'block';
     document.getElementById('bfQuizSummaryPhase').style.display = 'none';
+    document.getElementById('bf-quiz-overlay').classList.add('active');
 
     updateBfTimerDisplay();
     startBfTimer();

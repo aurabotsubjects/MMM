@@ -236,23 +236,28 @@ async function deleteStudent() {
 async function moveStudentToBasicFacts() {
     const s = students[selectedStudent];
     if (!confirm(`Move ${s.name} to Basic Facts? They'll come off the skill board and appear in the Basic Facts tab instead.`)) return;
-    await moveStudentToBasicFactsById(s.id);
+    const ok = await moveStudentToBasicFactsById(s.id);
+    await loadStudents();       // refetch to guarantee the UI matches the database
+    await loadBasicFactsAttempts();
     renderStudents();
     closeModal();
     renderBfRoster();
+    showToast(ok ? `${s.name} moved to Basic Facts` : `Could not move ${s.name} — please try again`, ok);
 }
 
 // Shared by the manual "Move to Basic Facts" button and by auto-advancing
 // past skill 50 — defaults a student onto Term 1, Week 1 unless they're
 // already on Basic Facts (keeps whatever they were already assigned).
+// Returns true/false so callers can confirm the save actually succeeded.
 async function moveStudentToBasicFactsById(studentId) {
     const s = students.find(x => x.id === studentId);
-    if (!s) return;
+    if (!s) return false;
     const patch = { is_basic_facts: true };
     if (!s.basic_facts_term) patch.basic_facts_term = 1;
-    if (!s.basic_facts_week) patch.basic_facts_week = bfWeeksForTerm(patch.basic_facts_term || s.basic_facts_term)[0];
+    const termForWeek = patch.basic_facts_term || s.basic_facts_term;
+    if (!s.basic_facts_week) patch.basic_facts_week = (bfWeeksForTerm(termForWeek)[0]) || 1;
     Object.assign(s, patch);
-    await updateStudentRow(s.id, patch);
+    return await updateStudentRow(s.id, patch);
 }
 
 function closeModal() {
@@ -387,7 +392,8 @@ async function importClassData(file) {
 
 async function updateStudentRow(id, patch) {
     const { error } = await sb.from('students').update(patch).eq('id', id);
-    if (error) { console.error(error); showToast('Could not save change'); }
+    if (error) { console.error(error); showToast('Could not save change'); return false; }
+    return true;
 }
 
 async function deleteStudentRow(id) {

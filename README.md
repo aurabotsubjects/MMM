@@ -144,14 +144,13 @@ include Basic Facts data. No other setup is required; the question bank lives en
   them a password reset email, regenerate their class code, or remove their access.
   You can also change your own admin password from here.
 - **Class results** (`class-view.html`): share the class code (shown on the teacher's
-  header and in the admin table) with your class/parents. Anyone with the code can see
-  the whole class's current levels — click a student's name to see their full score
-  history, a progress chart, an accuracy percentage, and print just their current
-  practice sheet. If your class has Basic Facts students, a "Take a Basic Facts Test"
-  button appears — students pick their own name from a dropdown, take the 5-minute,
-  100-question timed test right there on the page, and their score and time are saved
-  automatically. There's also a "Print a Basic Facts practice test" tool where anyone
-  can pick a term/week and print a blank worksheet.
+  header and in the admin table) with your class/parents. Once a class loads, two tabs
+  appear: **📊 Class Results** (click a name to see history, a progress chart, and print
+  a practice sheet) and **🧮 Basic Facts** — students pick their name and freely choose
+  any term/week to either print a blank practice worksheet or start the 5-minute,
+  100-question timed test right there (nothing is locked to what the teacher has
+  assigned — that assignment is just a default/reference for the teacher's own
+  preview and printing).
 
 ---
 
