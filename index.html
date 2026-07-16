@@ -27,8 +27,8 @@
         <div class="auth-error" id="authError"></div>
         <form id="authForm">
             <div class="auth-field">
-                <label for="authEmail">Email</label>
-                <input type="email" id="authEmail" autocomplete="username" required>
+                <label for="authEmail">Email <span style="font-weight:600;text-transform:none;color:var(--text-muted);">(or class code for relievers)</span></label>
+                <input type="text" id="authEmail" autocomplete="username" required>
             </div>
             <div class="auth-field">
                 <label for="authPassword">Password</label>
@@ -137,6 +137,7 @@
                 <div class="code-label">Class Code</div>
                 <div class="code-value" id="headerClassCode">—</div>
             </div>
+            <button class="tab-btn" id="relieverAccessBtn" onclick="openRelieverModal()">🔑 Reliever Access</button>
             <button class="tab-btn logout-btn" onclick="mmmLogout()">🚪 Sign Out</button>
         </div>
     </header>
@@ -405,6 +406,28 @@
         </div>
     </div>
 
+    <!-- Reliever Access modal -->
+    <div class="modal" id="reliever-modal">
+        <div class="modal-content">
+            <h3>🔑 Reliever Access</h3>
+            <p style="font-size:13px;color:var(--text-muted);margin:10px 0 16px;">
+                Set a password for a reliever (substitute) teacher. They'll sign in on this same page using your
+                <strong>class code</strong> as their username, and this password. A reliever can enter test scores
+                and print sheets, but can't manage students or Basic Facts.
+            </p>
+            <div class="auth-error" id="relieverModalError"></div>
+            <div class="auth-field">
+                <label for="relieverPasswordInput">Reliever password</label>
+                <input type="text" id="relieverPasswordInput" minlength="4" placeholder="At least 4 characters">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="saveRelieverPassword()">Save Password</button>
+                <button class="btn btn-red" onclick="turnOffRelieverAccess()">Turn Off Reliever Access</button>
+                <button class="btn btn-secondary" onclick="closeRelieverModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Student Tracker Modal ── -->
     <div class="modal" id="modal">
         <div class="modal-content">
@@ -572,6 +595,36 @@
         } finally {
             btn.disabled = false; btn.textContent = 'Send Request';
         }
+    });
+
+    // Reliever sign-in: if what's typed into the "email" box has no "@", treat it
+    // as a class code + reliever password instead of a normal teacher login.
+    // Registered before mmmInitLoginForm's own listener so it can intercept first.
+    document.getElementById('authForm').addEventListener('submit', async (e) => {
+        const emailOrCode = document.getElementById('authEmail').value.trim();
+        if (emailOrCode.includes('@')) return; // let the normal teacher login handle it
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const password = document.getElementById('authPassword').value;
+        const errorEl = document.getElementById('authError');
+        errorEl.classList.remove('show');
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        submitBtn.disabled = true; submitBtn.textContent = 'Signing in…';
+
+        const { data, error } = await sb.rpc('reliever_login', { p_code: emailOrCode, p_password: password });
+
+        submitBtn.disabled = false; submitBtn.textContent = 'Sign In';
+
+        if (error || !data || data.error) {
+            errorEl.textContent = 'Incorrect class code or reliever password.';
+            errorEl.classList.add('show');
+            return;
+        }
+
+        document.getElementById('authScreen').classList.add('hidden');
+        document.getElementById('appScreen').classList.remove('hidden');
+        initRelieverApp(data, emailOrCode, password);
     });
 
     mmmInitLoginForm({

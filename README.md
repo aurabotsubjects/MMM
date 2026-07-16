@@ -8,6 +8,9 @@ A rebuild of your Mad Math Minute app that:
 - Automatically moves a student into **Basic Facts** once they finish skill 50 — a
   5-minute, 100-question timed test students take themselves on the class-code page,
   with full attempt history and progress graphs for both students and the teacher
+- Lets a teacher set a **reliever (substitute) password** — a reliever signs in on the
+  same teacher page using the class code as their username, and can enter test scores
+  and print sheets without touching student management or Basic Facts
 - Lets teachers request their own account, which you approve (or decline) from one admin login
 - Gives students/parents a read-only "enter your class code" page to see levels, full score
   history, a progress chart, and print their own practice sheet — no login
@@ -119,6 +122,10 @@ in the SQL Editor — it adds the new columns/table and updates the class-code l
 include Basic Facts data. No other setup is required; the question bank lives entirely in
 `js/basicFactsData.js`, which is already included on both `index.html` and `class-view.html`.
 
+**If you're adding Reliever Access to an existing setup:** run `supabase/migration_reliever.sql`
+in the SQL Editor. No other setup needed — there's no separate reliever login to create anywhere;
+the teacher sets the password from inside the app.
+
 ---
 
 ## Using the app
@@ -138,6 +145,11 @@ include Basic Facts data. No other setup is required; the question bank lives en
     Term/Week each student is currently assigned to test on, preview or print any test,
     and click a name to see their full attempt history with graphs of correct answers
     and time taken.
+  - **🔑 Reliever Access** (top right): set a password for a substitute teacher. They
+    sign in on this same page, typing your **class code** in the email box instead of
+    an email address, plus this password. They'll land straight in Test Scores with
+    printing also available, but with no access to Student Tracker or Basic Facts.
+    Change or turn off the password here any time.
 - **Admin** (`admin.html`): sign in with the admin account you created. New teacher
   requests show up under **Pending Requests** — click ✓ to approve or ✗ to decline.
   Once approved, a teacher shows up in the main table where you can rename them, send
@@ -170,6 +182,10 @@ include Basic Facts data. No other setup is required; the question bank lives en
   **Authentication → Users** in the Supabase dashboard as well.
 - The PDFs live in a public R2 bucket — see the note at the end of step 1 above for what
   that does and doesn't protect.
+- Reliever access doesn't create a separate login account — it's a password checked
+  fresh on every action against the class it belongs to, and it can only ever read/write
+  that one class's non-Basic-Facts students and scores. It has no path to student
+  management, Basic Facts, or any other class.
 
 ## Files in this repo
 
@@ -185,4 +201,5 @@ js/app.js                      Teacher app logic
 js/admin.js                    Admin panel logic
 js/basicFactsData.js           Basic Facts question bank (Term → Week → 100 questions)
 supabase/schema.sql             Database tables, RLS policies, class-view function
+supabase/migration_reliever.sql Adds reliever (substitute teacher) access to an existing setup
 ```

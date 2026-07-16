@@ -36,6 +36,8 @@ let scoreRecords = {};       // { studentName: [{id, date, skill, score, advance
 let basicFactsAttempts = {}; // { studentId: [{id, term, week, correct, attempted, time_seconds, timed_out, attempted_at}, ...] }
 let bfPreviewTerm = null;
 let bfPreviewWeek = null;
+let isRelieverMode = false;
+let relieverAuth = null; // { code, password, teacherId, className, displayName }
 
 let selectedStudent = null;  // index into students[] for the tracker modal
 let clickTimer = null;
@@ -762,18 +764,29 @@ async function saveAllScores() {
     if (!date) { showToast('Please set a test date first'); return; }
 
     const snap = students.slice().sort((a,b) => a.name.localeCompare(b.name));
-    const rowsToInsert = [];
-    const advances = []; // {studentIdx, newPos}
+    const entries = []; // { student, skill, score }
 
     snap.forEach((student, rowIdx) => {
         const input = document.getElementById('row-score-' + rowIdx);
         if (!input || input.value === '') return;
         const score = parseInt(input.value);
         if (isNaN(score) || score < 0 || score > 15) return;
-
         const studentSkill = parseInt(input.getAttribute('data-skill')) || student.position;
-        let didAdvance = false;
+        entries.push({ student, skill: studentSkill, score });
+    });
 
+    if (entries.length === 0) { showToast('No scores entered — type at least one score'); return; }
+
+    if (isRelieverMode) {
+        await saveAllScoresAsReliever(entries, date);
+        return;
+    }
+
+    const rowsToInsert = [];
+    const advances = []; // {idx, newPos}
+
+    entries.forEach(({ student, skill, score }) => {
+        let didAdvance = false;
         if (score === 15) {
             const idx = students.findIndex(s => s.id === student.id);
             if (idx !== -1) {
@@ -783,19 +796,16 @@ async function saveAllScores() {
                 advances.push({ idx, newPos });
             }
         }
-
         rowsToInsert.push({
             teacher_id: currentProfile.id,
             student_id: student.id,
             student_name: student.name,
             test_date: date,
-            skill: studentSkill,
+            skill,
             score,
             advanced: didAdvance
         });
     });
-
-    if (rowsToInsert.length === 0) { showToast('No scores entered — type at least one score'); return; }
 
     const { data: inserted, error } = await sb.from('score_records').insert(rowsToInsert).select();
     if (error) { console.error(error); showToast('Could not save scores'); return; }
@@ -827,6 +837,32 @@ async function saveAllScores() {
     const advancedCount = advances.length;
     const adv = advancedCount > 0 ? ' · 🎉 ' + advancedCount + ' student' + (advancedCount!==1?'s':'') + ' advanced!' : '';
     showToast('💾 ' + rowsToInsert.length + ' score' + (rowsToInsert.length!==1?'s':'') + ' saved' + adv, true);
+}
+
+// Reliever version — goes through the secure RPC (which re-checks the class
+// code + reliever password on every call) instead of writing to tables directly.
+async function saveAllScoresAsReliever(entries, date) {
+    let savedCount = 0, advancedCount = 0;
+
+    for (const { student, skill, score } of entries) {
+        const { data, error } = await sb.rpc('reliever_save_test_score', {
+            p_code: relieverAuth.code,
+            p_password: relieverAuth.password,
+            p_student_id: student.id,
+            p_test_date: date,
+            p_skill: skill,
+            p_score: score
+        });
+        if (error || !data || data.error) { console.error(error || data); continue; }
+        savedCount++;
+        if (data.advanced) advancedCount++;
+    }
+
+    await loadRelieverData();
+    renderScoresGrid();
+
+    const adv = advancedCount > 0 ? ' · 🎉 ' + advancedCount + ' student' + (advancedCount!==1?'s':'') + ' advanced!' : '';
+    showToast('💾 ' + savedCount + ' score' + (savedCount!==1?'s':'') + ' saved' + adv, true);
 }
 
 function renderScoresGrid() {
@@ -1436,4 +1472,97 @@ function drawBfChart(canvasId, attempts, valueFn, maxVal, color) {
         ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
         ctx.fillStyle = color; ctx.fill(); ctx.strokeStyle = 'white'; ctx.lineWidth = 1.5; ctx.stroke();
     });
+}
+
+// ═══════════════════════════════════════════
+//  RELIEVER (substitute teacher) MODE
+// ═══════════════════════════════════════════
+
+async function loadRelieverData() {
+    const { data, error } = await sb.rpc('reliever_get_roster', {
+        p_code: relieverAuth.code,
+        p_password: relieverAuth.password
+    });
+    if (error || !data || data.error) {
+        console.error(error || data);
+        showToast('Could not load the class roster');
+        return;
+    }
+    students = (data.students || []).map(s => ({ id: s.id, name: s.name, position: s.position, is_basic_facts: false }));
+    scoreRecords = {};
+    (data.students || []).forEach(s => {
+        scoreRecords[s.name] = (s.records || []).map(r => ({
+            id: r.id, date: r.date, skill: r.skill, score: r.score, advanced: r.advanced
+        }));
+    });
+}
+
+async function initRelieverApp(info, code, password) {
+    isRelieverMode = true;
+    relieverAuth = { code, password, teacherId: info.teacher_id, className: info.class_name, displayName: info.display_name };
+    currentProfile = { id: info.teacher_id, display_name: info.display_name, class_name: info.class_name, class_code: code };
+
+    document.getElementById('headerTeacherName').textContent = 'Reliever — ' + (info.display_name || '');
+    document.getElementById('headerClassName').textContent = info.class_name || '';
+    document.getElementById('headerClassCode').textContent = code;
+
+    // Reliever only gets Test Scores + Printing — hide everything else
+    const trackerTab = document.getElementById('tab-tracker');
+    const bfTab = document.getElementById('tab-basicfacts');
+    if (trackerTab) trackerTab.classList.add('hidden');
+    if (bfTab) bfTab.classList.add('hidden');
+    const relieverBtn = document.getElementById('relieverAccessBtn');
+    if (relieverBtn) relieverBtn.classList.add('hidden');
+    const logoutBtn = document.querySelector('.logout-btn');
+    if (logoutBtn) { logoutBtn.textContent = '🚪 Exit Reliever Mode'; logoutBtn.onclick = exitRelieverMode; }
+
+    await loadRelieverData();
+    setPrintDocType('skills');
+    populateScoreSelects();
+    renderScoresTable();
+    renderScoreCards();
+    switchTab('scores');
+}
+
+function exitRelieverMode() {
+    isRelieverMode = false;
+    relieverAuth = null;
+    window.location.href = 'index.html';
+}
+
+// ── Teacher-side: set / change / disable the reliever password ──
+function openRelieverModal() {
+    document.getElementById('relieverPasswordInput').value = '';
+    document.getElementById('relieverModalError').classList.remove('show');
+    document.getElementById('reliever-modal').classList.add('active');
+}
+
+function closeRelieverModal() {
+    document.getElementById('reliever-modal').classList.remove('active');
+}
+
+async function saveRelieverPassword() {
+    const pw = document.getElementById('relieverPasswordInput').value;
+    const errEl = document.getElementById('relieverModalError');
+    if (!pw || pw.length < 4) {
+        errEl.textContent = 'Password must be at least 4 characters';
+        errEl.classList.add('show');
+        return;
+    }
+    const { data, error } = await sb.rpc('set_reliever_password', { p_new_password: pw });
+    if (error || !data || data.error) {
+        errEl.textContent = 'Could not save — please try again';
+        errEl.classList.add('show');
+        return;
+    }
+    closeRelieverModal();
+    showToast('Reliever password set', true);
+}
+
+async function turnOffRelieverAccess() {
+    if (!confirm('Turn off reliever access? The reliever password will stop working until you set a new one.')) return;
+    const { data, error } = await sb.rpc('disable_reliever_access');
+    if (error || !data || data.error) { showToast('Could not turn off reliever access'); return; }
+    closeRelieverModal();
+    showToast('Reliever access turned off', true);
 }
