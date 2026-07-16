@@ -1122,6 +1122,11 @@ function formatBfTime(seconds) {
     return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
 function initBasicFactsTab() {
     const tabsEl = document.getElementById('bfTermTabs');
     if (!tabsEl) return;
