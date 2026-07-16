@@ -124,6 +124,9 @@
                 🖨️ Print Skills
                 <span class="badge-count hidden" id="print-badge">0</span>
             </button>
+            <button class="tab-btn" onclick="switchTab('basicfacts')" id="tab-basicfacts">
+                🧮 Basic Facts
+            </button>
         </nav>
         <div class="class-code-chip">
             <div>
@@ -298,6 +301,110 @@
         </div>
     </div>
 
+    <!-- ════════════════════════════════════
+         TAB 4: BASIC FACTS
+    ════════════════════════════════════ -->
+    <div class="tab-panel" id="panel-basicfacts">
+        <div class="scores-layout">
+            <div class="scores-top">
+                <h2>Basic Facts</h2>
+                <span style="font-size:12px;color:var(--text-muted);">Students move here automatically after finishing Skill 50 — they don't level up or down, just try to beat their own best.</span>
+            </div>
+
+            <!-- Preview / print any term+week -->
+            <div class="skills-table-wrap" style="padding:18px;margin-bottom:24px;">
+                <p style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px;">Preview or Print a Test</p>
+                <div id="bfTermTabs" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;"></div>
+                <div id="bfWeekTabs" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;"></div>
+                <div id="bfPreviewGrid" style="display:none;">
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:220px;overflow-y:auto;padding:12px;background:var(--bg);border-radius:10px;border:1px solid var(--border);margin-bottom:12px;" id="bfPreviewChips"></div>
+                    <button class="btn btn-primary" onclick="printBasicFactsTest()">🖨️ Preview &amp; Print This Test</button>
+                </div>
+            </div>
+
+            <!-- Roster -->
+            <div class="skills-table-wrap">
+                <div class="table-toolbar">
+                    <span style="font-size:13px;font-weight:700;color:var(--text-muted);">Students on Basic Facts — click a name for full history and graphs.</span>
+                </div>
+                <div style="overflow-y:auto;max-height:480px;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>Assigned Test</th>
+                                <th>Last Attempt</th>
+                                <th>Attempts</th>
+                                <th>Avg Correct</th>
+                                <th>Avg Time</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="bf-roster-body">
+                            <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);">No students on Basic Facts yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Basic Facts print preview -->
+    <div class="pdf-overlay" id="bf-print-overlay">
+        <div class="pdf-overlay-header">
+            <h2>📄 Basic Facts Worksheet</h2>
+            <div class="pdf-overlay-actions">
+                <button class="btn btn-secondary" onclick="closeBfPrintPreview()">← Back</button>
+                <button class="btn btn-primary" id="bf-print-btn">🖨️ Print</button>
+            </div>
+        </div>
+        <div class="pdf-body">
+            <iframe id="bf-print-frame" src=""></iframe>
+        </div>
+    </div>
+
+    <!-- Basic Facts student detail modal -->
+    <div class="student-detail-overlay no-print" id="bf-detail-overlay" onclick="closeBfDetail(event)">
+        <div class="student-detail-modal" id="bf-detail-modal">
+            <div class="sdm-header">
+                <div class="sdm-avatar" id="bf-sdm-avatar"></div>
+                <div>
+                    <div class="sdm-name" id="bf-sdm-name"></div>
+                    <div class="sdm-sub" id="bf-sdm-sub"></div>
+                </div>
+                <div class="sdm-actions">
+                    <button class="btn btn-secondary" style="font-size:13px;" onclick="closeBfDetail()">✕ Close</button>
+                </div>
+            </div>
+            <div class="sdm-body">
+                <div class="sdm-stats" id="bf-sdm-stats"></div>
+                <div class="sdm-chart-wrap">
+                    <h4>Correct Answers Over Time</h4>
+                    <canvas id="bf-chart-correct" height="160"></canvas>
+                </div>
+                <div class="sdm-chart-wrap">
+                    <h4>Time Taken Over Time</h4>
+                    <canvas id="bf-chart-time" height="160"></canvas>
+                </div>
+                <div class="sdm-history">
+                    <h4>Attempt History</h4>
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Test</th>
+                                <th>Correct</th>
+                                <th>Time</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="bf-sdm-history-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Student Tracker Modal ── -->
     <div class="modal" id="modal">
         <div class="modal-content">
@@ -305,6 +412,7 @@
             <div class="modal-buttons">
                 <button class="btn btn-secondary" onclick="showRename()">✏️ Rename Student</button>
                 <button class="btn btn-secondary" onclick="showManualPlacement()">📍 Move to Position</button>
+                <button class="btn btn-secondary" onclick="moveStudentToBasicFacts()">🧮 Move to Basic Facts</button>
                 <button class="btn btn-red" onclick="deleteStudent()">🗑️ Delete Student</button>
                 <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
             </div>
@@ -384,6 +492,7 @@
 <script src="js/config.js"></script>
 <script src="js/supabaseClient.js"></script>
 <script src="js/auth.js"></script>
+<script src="js/basicFactsData.js"></script>
 <script src="js/app.js"></script>
 <script>
     function showSignupCard() {

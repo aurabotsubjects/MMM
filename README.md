@@ -5,6 +5,9 @@ A rebuild of your Mad Math Minute app that:
 - Automatically pulls the correct PDF (skills sheets or Friday tests) — no file picking
 - Stores students, levels, and test scores in Supabase instead of the browser
 - Auto-advances a student's level when you enter a score of 15/15
+- Automatically moves a student into **Basic Facts** once they finish skill 50 — a
+  5-minute, 100-question timed test students take themselves on the class-code page,
+  with full attempt history and progress graphs for both students and the teacher
 - Lets teachers request their own account, which you approve (or decline) from one admin login
 - Gives students/parents a read-only "enter your class code" page to see levels, full score
   history, a progress chart, and print their own practice sheet — no login
@@ -111,6 +114,11 @@ Commit and push. Your site is live.
 `supabase/migration_class_view_history.sql` in the SQL Editor if you haven't already — that's what
 lets the class-code page show each student's score history.
 
+**If you're adding Basic Facts to an existing setup:** run `supabase/migration_basic_facts.sql`
+in the SQL Editor — it adds the new columns/table and updates the class-code lookup function to
+include Basic Facts data. No other setup is required; the question bank lives entirely in
+`js/basicFactsData.js`, which is already included on both `index.html` and `class-view.html`.
+
 ---
 
 ## Using the app
@@ -125,6 +133,11 @@ lets the class-code page show each student's score history.
     them to the next skill.
   - **Print Skills / Print Tests**: switch between the two documents — the correct PDF
     is fetched automatically from your R2 bucket. No file picking.
+  - **Basic Facts**: once a student finishes skill 50, they move here automatically (or
+    move them manually from their tracker card with "🧮 Move to Basic Facts"). Set which
+    Term/Week each student is currently assigned to test on, preview or print any test,
+    and click a name to see their full attempt history with graphs of correct answers
+    and time taken.
 - **Admin** (`admin.html`): sign in with the admin account you created. New teacher
   requests show up under **Pending Requests** — click ✓ to approve or ✗ to decline.
   Once approved, a teacher shows up in the main table where you can rename them, send
@@ -134,7 +147,11 @@ lets the class-code page show each student's score history.
   header and in the admin table) with your class/parents. Anyone with the code can see
   the whole class's current levels — click a student's name to see their full score
   history, a progress chart, an accuracy percentage, and print just their current
-  practice sheet.
+  practice sheet. If your class has Basic Facts students, a "Take a Basic Facts Test"
+  button appears — students pick their own name from a dropdown, take the 5-minute,
+  100-question timed test right there on the page, and their score and time are saved
+  automatically. There's also a "Print a Basic Facts practice test" tool where anyone
+  can pick a term/week and print a blank worksheet.
 
 ---
 
@@ -167,5 +184,6 @@ js/supabaseClient.js           Creates the Supabase client
 js/auth.js                     Shared login/signup/session helpers
 js/app.js                      Teacher app logic
 js/admin.js                    Admin panel logic
+js/basicFactsData.js           Basic Facts question bank (Term → Week → 100 questions)
 supabase/schema.sql             Database tables, RLS policies, class-view function
 ```

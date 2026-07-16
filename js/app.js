@@ -31,8 +31,11 @@ const colorMap = {
 };
 
 let currentProfile = null;   // signed-in teacher's profile row
-let students = [];           // [{id, name, position}]
+let students = [];           // [{id, name, position, is_basic_facts, basic_facts_term, basic_facts_week}]
 let scoreRecords = {};       // { studentName: [{id, date, skill, score, advanced}, ...] }
+let basicFactsAttempts = {}; // { studentId: [{id, term, week, correct, attempted, time_seconds, timed_out, attempted_at}, ...] }
+let bfPreviewTerm = null;
+let bfPreviewWeek = null;
 
 let selectedStudent = null;  // index into students[] for the tracker modal
 let clickTimer = null;
@@ -55,11 +58,13 @@ async function initApp(profile) {
 
     await loadStudents();
     await loadScores();
+    await loadBasicFactsAttempts();
     initBoard();
     setPrintDocType('skills');
     populateScoreSelects();
     renderScoresTable();
     renderScoreCards();
+    initBasicFactsTab();
 }
 
 // ─────────────────────────────────────────
@@ -68,7 +73,7 @@ async function initApp(profile) {
 async function loadStudents() {
     const { data, error } = await sb
         .from('students')
-        .select('id, name, position')
+        .select('id, name, position, is_basic_facts, basic_facts_term, basic_facts_week')
         .eq('teacher_id', currentProfile.id)
         .order('position', { ascending: true });
     if (error) { console.error(error); showToast('Could not load students'); return; }
@@ -88,6 +93,20 @@ async function loadScores() {
         scoreRecords[r.student_name].push({
             id: r.id, date: r.test_date, skill: r.skill, score: r.score, advanced: r.advanced
         });
+    });
+}
+
+async function loadBasicFactsAttempts() {
+    const { data, error } = await sb
+        .from('basic_facts_attempts')
+        .select('id, student_id, term, week, correct, attempted, time_seconds, timed_out, attempted_at')
+        .eq('teacher_id', currentProfile.id)
+        .order('attempted_at', { ascending: true });
+    if (error) { console.error(error); showToast('Could not load Basic Facts history'); return; }
+    basicFactsAttempts = {};
+    (data || []).forEach(a => {
+        if (!basicFactsAttempts[a.student_id]) basicFactsAttempts[a.student_id] = [];
+        basicFactsAttempts[a.student_id].push(a);
     });
 }
 
@@ -120,6 +139,7 @@ function initBoard() {
 function renderStudents() {
     document.querySelectorAll('.students-container').forEach(c => c.innerHTML = '');
     students.forEach((student, index) => {
+        if (student.is_basic_facts) return; // shown in the Basic Facts tab instead
         const container = document.querySelector(`[data-position="${student.position}"] .students-container`);
         if (container) {
             const label = document.createElement('div');
@@ -153,8 +173,7 @@ async function advanceStudent(idx) {
     let newPos = s.position + 1;
     if (newPos === 20) newPos++;
     if (newPos > 50) {
-        await deleteStudentRow(s.id);
-        students.splice(idx, 1);
+        await moveStudentToBasicFactsById(s.id);
     } else {
         s.position = newPos;
         await updateStudentRow(s.id, { position: newPos });
@@ -212,6 +231,28 @@ async function deleteStudent() {
         renderStudents();
         closeModal();
     }
+}
+
+async function moveStudentToBasicFacts() {
+    const s = students[selectedStudent];
+    if (!confirm(`Move ${s.name} to Basic Facts? They'll come off the skill board and appear in the Basic Facts tab instead.`)) return;
+    await moveStudentToBasicFactsById(s.id);
+    renderStudents();
+    closeModal();
+    renderBfRoster();
+}
+
+// Shared by the manual "Move to Basic Facts" button and by auto-advancing
+// past skill 50 — defaults a student onto Term 1, Week 1 unless they're
+// already on Basic Facts (keeps whatever they were already assigned).
+async function moveStudentToBasicFactsById(studentId) {
+    const s = students.find(x => x.id === studentId);
+    if (!s) return;
+    const patch = { is_basic_facts: true };
+    if (!s.basic_facts_term) patch.basic_facts_term = 1;
+    if (!s.basic_facts_week) patch.basic_facts_week = bfWeeksForTerm(patch.basic_facts_term || s.basic_facts_term)[0];
+    Object.assign(s, patch);
+    await updateStudentRow(s.id, patch);
 }
 
 function closeModal() {
@@ -594,6 +635,9 @@ function switchTab(tab) {
         renderScoresTable();
         renderScoreCards();
     }
+    if (tab === 'basicfacts') {
+        renderBfRoster();
+    }
 }
 
 // ═══════════════════════════════════════════
@@ -638,13 +682,13 @@ function renderScoresTable() {
     const tbody = document.getElementById('scores-table-body');
     if (!tbody) return;
 
-    if (!students || students.length === 0) {
+    if (!students || students.filter(s => !s.is_basic_facts).length === 0) {
         tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted);">No students on the tracker yet — add some in the Student Tracker tab.</td></tr>';
         return;
     }
 
     tbody.innerHTML = '';
-    const sorted = students.slice().sort((a,b) => a.name.localeCompare(b.name));
+    const sorted = students.filter(s => !s.is_basic_facts).sort((a,b) => a.name.localeCompare(b.name));
     sorted.forEach((student, rowIdx) => {
         const records = scoreRecords[student.name] || [];
         const scores  = records.map(r => r.score);
@@ -750,17 +794,19 @@ async function saveAllScores() {
     const { data: inserted, error } = await sb.from('score_records').insert(rowsToInsert).select();
     if (error) { console.error(error); showToast('Could not save scores'); return; }
 
-    // apply advances (and removals for anyone who passed position 50) in the database,
-    // then reload the authoritative list to avoid any local index drift
+    // apply advances (and Basic Facts promotion for anyone who passed position 50)
+    // in the database, then reload the authoritative list to avoid any local index drift
     for (const adv of advances) {
         const s = students[adv.idx];
         if (adv.newPos > 50) {
-            await deleteStudentRow(s.id);
+            await moveStudentToBasicFactsById(s.id);
         } else {
             await updateStudentRow(s.id, { position: adv.newPos });
         }
     }
     await loadStudents();
+    await loadBasicFactsAttempts();
+    renderBfRoster();
 
     // update local scoreRecords cache
     (inserted || []).forEach(r => {
@@ -1053,4 +1099,320 @@ function _doPrint(names) {
             '});setTimeout(function(){window.print();},800);}' +
         '<\/script></body></html>');
     win.document.close();
+}
+
+// ═══════════════════════════════════════════
+//  BASIC FACTS MODULE (teacher side)
+// ═══════════════════════════════════════════
+
+function bfWeeksForTerm(term) {
+    if (!window.BASIC_FACTS_DATA || !BASIC_FACTS_DATA[term]) return [];
+    return Object.keys(BASIC_FACTS_DATA[term]).map(Number).sort((a, b) => a - b);
+}
+
+function formatBfTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function initBasicFactsTab() {
+    const tabsEl = document.getElementById('bfTermTabs');
+    if (!tabsEl) return;
+    tabsEl.innerHTML = '';
+    [1, 2, 3, 4].forEach(t => {
+        const btn = document.createElement('button');
+        btn.className = 'doc-type-btn' + (t === 1 ? ' active' : '');
+        btn.textContent = 'Term ' + t;
+        btn.id = 'bfTermBtn' + t;
+        btn.onclick = () => selectBfTerm(t);
+        tabsEl.appendChild(btn);
+    });
+    selectBfTerm(1);
+    renderBfRoster();
+}
+
+function selectBfTerm(term) {
+    bfPreviewTerm = term;
+    bfPreviewWeek = null;
+    [1, 2, 3, 4].forEach(t => {
+        const btn = document.getElementById('bfTermBtn' + t);
+        if (btn) btn.classList.toggle('active', t === term);
+    });
+    const weekTabs = document.getElementById('bfWeekTabs');
+    weekTabs.innerHTML = '';
+    bfWeeksForTerm(term).forEach(w => {
+        const btn = document.createElement('button');
+        btn.className = 'doc-type-btn';
+        btn.textContent = 'Week ' + w;
+        btn.id = 'bfWeekBtn' + w;
+        btn.onclick = () => selectBfWeek(term, w);
+        weekTabs.appendChild(btn);
+    });
+    document.getElementById('bfPreviewGrid').style.display = 'none';
+}
+
+function selectBfWeek(term, week) {
+    bfPreviewTerm = term;
+    bfPreviewWeek = week;
+    bfWeeksForTerm(term).forEach(w => {
+        const btn = document.getElementById('bfWeekBtn' + w);
+        if (btn) btn.classList.toggle('active', w === week);
+    });
+    renderBfPreviewChips();
+}
+
+function renderBfPreviewChips() {
+    const grid = document.getElementById('bfPreviewGrid');
+    const chipsEl = document.getElementById('bfPreviewChips');
+    if (!bfPreviewTerm || !bfPreviewWeek) { grid.style.display = 'none'; return; }
+    const qs = BASIC_FACTS_DATA[bfPreviewTerm][bfPreviewWeek] || [];
+    chipsEl.innerHTML = qs.map(q => `<span class="student-chip">${q.replace('x', '×')} =</span>`).join('');
+    grid.style.display = 'block';
+}
+
+function previewStudentAssignedTest(studentId) {
+    const s = students.find(x => x.id === studentId);
+    if (!s || !s.basic_facts_term || !s.basic_facts_week) return;
+    selectBfTerm(s.basic_facts_term);
+    selectBfWeek(s.basic_facts_term, s.basic_facts_week);
+    document.getElementById('bfPreviewGrid').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// ── Worksheet building (no source PDF — generated straight from the question bank) ──
+function buildBfWorksheetPage(term, week) {
+    const qs = BASIC_FACTS_DATA[term][week];
+    let rows = '';
+    for (let r = 0; r < 10; r++) {
+        let cells = '';
+        for (let c = 0; c < 10; c++) {
+            const idx = r * 10 + c;
+            const q = qs[idx];
+            cells += `<td><div class="ws-cell">
+                <div class="ws-cell-num">${idx + 1}</div>
+                <div class="ws-cell-q">${q.replace('x', '×')} =</div>
+                <div class="ws-cell-ans"></div>
+            </div></td>`;
+        }
+        rows += `<tr>${cells}</tr>`;
+    }
+    return `<div class="ws-page">
+        <div class="ws-header">
+            <div class="ws-title">Basic Facts — Term ${term}, Week ${week}</div>
+            <div class="ws-meta">100 questions | 5 min</div>
+        </div>
+        <div class="ws-info-row">
+            <span>Name: <span class="ws-info-line"></span></span>
+            <span>Date: <span class="ws-info-line"></span></span>
+            <span>Score: <span class="ws-info-line" style="width:60px"></span> / 100</span>
+        </div>
+        <table class="ws-table"><tbody>${rows}</tbody></table>
+    </div>`;
+}
+
+const BF_WORKSHEET_STYLE = `
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Nunito', sans-serif; background: #fff; }
+    @page { size: A4 portrait; margin: 10mm; }
+    .ws-page { width: 100%; padding: 4mm; }
+    .ws-header { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2.5px solid #1e293b; padding-bottom: 4px; margin-bottom: 6px; }
+    .ws-title { font-size: 14pt; font-weight: 900; color: #1e293b; }
+    .ws-meta { font-size: 9pt; font-weight: 700; color: #64748b; }
+    .ws-info-row { display: flex; gap: 20px; margin-bottom: 6px; font-size: 9pt; font-weight: 700; color: #64748b; }
+    .ws-info-line { display: inline-block; width: 80px; border-bottom: 1.5px solid #94a3b8; vertical-align: middle; }
+    .ws-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .ws-table td { width: 10%; padding: 0; vertical-align: top; }
+    .ws-cell { margin: 1.5px; border: 1.5px solid #cbd5e1; border-radius: 4px; padding: 4px 4px 3px; }
+    .ws-cell-num { font-size: 7pt; color: #94a3b8; font-weight: 700; line-height: 1; margin-bottom: 1px; }
+    .ws-cell-q { font-size: 11pt; font-weight: 800; color: #1e293b; line-height: 1.2; }
+    .ws-cell-ans { margin-top: 4px; border-bottom: 1.5px solid #94a3b8; height: 14px; }
+`;
+
+function printBasicFactsTest() {
+    if (!bfPreviewTerm || !bfPreviewWeek) return;
+    const page = buildBfWorksheetPage(bfPreviewTerm, bfPreviewWeek);
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+        <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+        <style>${BF_WORKSHEET_STYLE}</style></head><body>${page}</body></html>`;
+    const frame = document.getElementById('bf-print-frame');
+    frame.srcdoc = html;
+    document.getElementById('bf-print-btn').onclick = () => {
+        try {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+        } catch (err) {
+            showToast('Could not open the print dialog — try again');
+        }
+    };
+    document.getElementById('bf-print-overlay').classList.add('active');
+}
+
+function closeBfPrintPreview() {
+    document.getElementById('bf-print-overlay').classList.remove('active');
+}
+
+// ── Roster ──────────────────────────────────
+function renderBfRoster() {
+    const tbody = document.getElementById('bf-roster-body');
+    if (!tbody) return;
+    const bfStudents = students.filter(s => s.is_basic_facts).sort((a, b) => a.name.localeCompare(b.name));
+
+    if (bfStudents.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);">No students on Basic Facts yet.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = '';
+    bfStudents.forEach(s => {
+        const attempts = basicFactsAttempts[s.id] || [];
+        const last = attempts.length ? attempts[attempts.length - 1] : null;
+        const avgCorrect = attempts.length ? Math.round(attempts.reduce((a, b) => a + b.correct, 0) / attempts.length) : null;
+        const avgTime = attempts.length ? Math.round(attempts.reduce((a, b) => a + b.time_seconds, 0) / attempts.length) : null;
+        const term = s.basic_facts_term || 1;
+        const week = s.basic_facts_week || bfWeeksForTerm(term)[0];
+
+        const weekOptions = bfWeeksForTerm(term).map(w => `<option value="${w}" ${w === week ? 'selected' : ''}>Week ${w}</option>`).join('');
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><strong>${escapeHtml(s.name)}</strong></td>
+            <td>
+                <select onchange="updateBfTerm('${s.id}', this.value)" style="margin-right:6px;padding:4px 6px;border-radius:6px;border:1.5px solid var(--border);">
+                    ${[1,2,3,4].map(t => `<option value="${t}" ${t===term?'selected':''}>Term ${t}</option>`).join('')}
+                </select>
+                <select onchange="updateBfWeek('${s.id}', this.value)" style="padding:4px 6px;border-radius:6px;border:1.5px solid var(--border);">
+                    ${weekOptions}
+                </select>
+            </td>
+            <td>${last ? `${last.correct}/100 in ${formatBfTime(last.time_seconds)}` : '—'}</td>
+            <td>${attempts.length}</td>
+            <td>${avgCorrect !== null ? avgCorrect + '/100' : '—'}</td>
+            <td>${avgTime !== null ? formatBfTime(avgTime) : '—'}</td>
+            <td style="white-space:nowrap;">
+                <button class="icon-btn" title="Preview this test" onclick="previewStudentAssignedTest('${s.id}')">👁️</button>
+                <button class="icon-btn" title="View history" onclick="openBfDetail('${s.id}')">📊</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+async function updateBfTerm(studentId, newTerm) {
+    newTerm = parseInt(newTerm);
+    const s = students.find(x => x.id === studentId);
+    if (!s) return;
+    const newWeek = bfWeeksForTerm(newTerm)[0];
+    s.basic_facts_term = newTerm;
+    s.basic_facts_week = newWeek;
+    await updateStudentRow(studentId, { basic_facts_term: newTerm, basic_facts_week: newWeek });
+    renderBfRoster();
+}
+
+async function updateBfWeek(studentId, newWeek) {
+    newWeek = parseInt(newWeek);
+    const s = students.find(x => x.id === studentId);
+    if (!s) return;
+    s.basic_facts_week = newWeek;
+    await updateStudentRow(studentId, { basic_facts_week: newWeek });
+    renderBfRoster();
+}
+
+// ── Detail modal (stats + 2 charts + history) ──
+let currentBfDetailStudentId = null;
+
+function openBfDetail(studentId) {
+    currentBfDetailStudentId = studentId;
+    const s = students.find(x => x.id === studentId);
+    if (!s) return;
+    const attempts = basicFactsAttempts[studentId] || [];
+    const color = getStudentColor(s.name);
+
+    const avgCorrect = attempts.length ? Math.round(attempts.reduce((a, b) => a + b.correct, 0) / attempts.length) : '—';
+    const best = attempts.length ? Math.max(...attempts.map(a => a.correct)) : '—';
+    const avgTime = attempts.length ? formatBfTime(Math.round(attempts.reduce((a, b) => a + b.time_seconds, 0) / attempts.length)) : '—';
+    const bestTime = attempts.length ? formatBfTime(Math.min(...attempts.map(a => a.time_seconds))) : '—';
+
+    document.getElementById('bf-sdm-avatar').style.background = color;
+    document.getElementById('bf-sdm-avatar').textContent = getInitials(s.name);
+    document.getElementById('bf-sdm-name').textContent = s.name;
+    document.getElementById('bf-sdm-sub').textContent = `Currently: Term ${s.basic_facts_term || 1}, Week ${s.basic_facts_week || 1} · ${attempts.length} attempt${attempts.length !== 1 ? 's' : ''}`;
+
+    document.getElementById('bf-sdm-stats').innerHTML =
+        `<div class="sdm-stat"><div class="val">${avgCorrect}${avgCorrect!=='—'?'/100':''}</div><div class="lbl">Avg Correct</div></div>` +
+        `<div class="sdm-stat"><div class="val">${best}${best!=='—'?'/100':''}</div><div class="lbl">Best Correct</div></div>` +
+        `<div class="sdm-stat"><div class="val">${avgTime}</div><div class="lbl">Avg Time</div></div>` +
+        `<div class="sdm-stat"><div class="val">${bestTime}</div><div class="lbl">Fastest</div></div>`;
+
+    drawBfChart('bf-chart-correct', attempts, a => a.correct, 100, color);
+    drawBfChart('bf-chart-time', attempts, a => a.time_seconds, 300, '#6b9ac4');
+
+    const tbody = document.getElementById('bf-sdm-history-body');
+    tbody.innerHTML = '';
+    if (attempts.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No attempts yet</td></tr>';
+    } else {
+        attempts.slice().reverse().forEach(a => {
+            const cls = a.correct >= 90 ? 'perfect' : a.correct >= 70 ? 'high' : a.correct >= 50 ? 'mid' : 'low';
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+                `<td>${new Date(a.attempted_at).toLocaleDateString()}</td>` +
+                `<td>Term ${a.term}, Wk ${a.week}</td>` +
+                `<td><span class="score-pill ${cls}">${a.correct}/100</span></td>` +
+                `<td>${formatBfTime(a.time_seconds)}${a.timed_out ? ' (time up)' : ''}</td>` +
+                `<td></td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    document.getElementById('bf-detail-overlay').classList.add('active');
+}
+
+function closeBfDetail(e) {
+    if (e && e.target !== document.getElementById('bf-detail-overlay')) return;
+    document.getElementById('bf-detail-overlay').classList.remove('active');
+    currentBfDetailStudentId = null;
+}
+
+function drawBfChart(canvasId, attempts, valueFn, maxVal, color) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const w = canvas.offsetWidth || 580, h = 160;
+    canvas.width = w * 2; canvas.height = h * 2;
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+    const ctx = canvas.getContext('2d'); ctx.scale(2, 2);
+    const padL = 40, padR = 16, padT = 16, padB = 30, cw = w - padL - padR, ch = h - padT - padB;
+
+    [0, 0.5, 1].forEach(f => {
+        const y = padT + ch * (1 - f);
+        ctx.beginPath(); ctx.strokeStyle = '#e0d8cc'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+        ctx.moveTo(padL, y); ctx.lineTo(padL + cw, y); ctx.stroke(); ctx.setLineDash([]);
+        ctx.font = '10px "DM Mono",monospace'; ctx.fillStyle = '#aaa';
+        ctx.textAlign = 'right'; ctx.fillText(Math.round(f * maxVal), padL - 6, y + 4);
+    });
+
+    if (attempts.length === 0) {
+        ctx.font = '14px Nunito,sans-serif'; ctx.fillStyle = '#aaa'; ctx.textAlign = 'center';
+        ctx.fillText('No attempts yet', w / 2, h / 2);
+        return;
+    }
+
+    const points = attempts.map(a => valueFn(a));
+    if (points.length === 1) {
+        const x = padL + cw / 2, y = padT + ch * (1 - points[0] / maxVal);
+        ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+        return;
+    }
+    const xStep = cw / (points.length - 1);
+    ctx.beginPath();
+    points.forEach((v, i) => { const x = padL + i * xStep, y = padT + ch * (1 - v / maxVal); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+    ctx.lineTo(padL + (points.length - 1) * xStep, padT + ch); ctx.lineTo(padL, padT + ch); ctx.closePath();
+    ctx.fillStyle = color + '28'; ctx.fill();
+    ctx.beginPath();
+    points.forEach((v, i) => { const x = padL + i * xStep, y = padT + ch * (1 - v / maxVal); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+    ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+    points.forEach((v, i) => {
+        const x = padL + i * xStep, y = padT + ch * (1 - v / maxVal);
+        ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = color; ctx.fill(); ctx.strokeStyle = 'white'; ctx.lineWidth = 1.5; ctx.stroke();
+    });
 }
