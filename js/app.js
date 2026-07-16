@@ -1302,10 +1302,20 @@ function renderBfRoster() {
             <td style="white-space:nowrap;">
                 <button class="icon-btn" title="Preview this test" onclick="previewStudentAssignedTest('${s.id}')">👁️</button>
                 <button class="icon-btn" title="View history" onclick="openBfDetail('${s.id}')">📊</button>
+                <button class="icon-btn" title="Delete student" onclick="deleteBfStudent('${s.id}', '${escapeHtml(s.name).replace(/'/g,"\\'")}')">🗑️</button>
             </td>
         `;
         tbody.appendChild(tr);
     });
+}
+
+async function deleteBfStudent(id, name) {
+    if (!confirm(`Delete ${name}? This removes them completely, including their Basic Facts history.`)) return;
+    await deleteStudentRow(id);
+    students = students.filter(s => s.id !== id);
+    delete basicFactsAttempts[id];
+    renderBfRoster();
+    showToast(`${name} deleted`, true);
 }
 
 async function updateBfTerm(studentId, newTerm) {
