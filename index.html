@@ -616,7 +616,13 @@
 
         submitBtn.disabled = false; submitBtn.textContent = 'Sign In';
 
-        if (error || !data || data.error) {
+        if (error) {
+            console.error('reliever_login RPC error:', error);
+            errorEl.textContent = 'Could not sign in: ' + (error.message || 'unknown error');
+            errorEl.classList.add('show');
+            return;
+        }
+        if (!data || data.error) {
             errorEl.textContent = 'Incorrect class code or reliever password.';
             errorEl.classList.add('show');
             return;
