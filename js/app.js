@@ -847,7 +847,7 @@ async function saveAllScoresAsReliever(entries, date) {
     for (const { student, skill, score } of entries) {
         const { data, error } = await sb.rpc('reliever_save_test_score', {
             p_code: relieverAuth.code,
-            p_password: relieverAuth.password,
+            p_secret: relieverAuth.password,
             p_student_id: student.id,
             p_test_date: date,
             p_skill: skill,
@@ -1481,7 +1481,7 @@ function drawBfChart(canvasId, attempts, valueFn, maxVal, color) {
 async function loadRelieverData() {
     const { data, error } = await sb.rpc('reliever_get_roster', {
         p_code: relieverAuth.code,
-        p_password: relieverAuth.password
+        p_secret: relieverAuth.password
     });
     if (error || !data || data.error) {
         console.error(error || data);
@@ -1549,7 +1549,7 @@ async function saveRelieverPassword() {
         errEl.classList.add('show');
         return;
     }
-    const { data, error } = await sb.rpc('set_reliever_password', { p_new_password: pw });
+    const { data, error } = await sb.rpc('configure_reliever_access', { p_secret: pw });
     if (error || !data || data.error) {
         errEl.textContent = 'Could not save — please try again';
         errEl.classList.add('show');

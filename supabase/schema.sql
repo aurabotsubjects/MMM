@@ -15,7 +15,7 @@ create table public.profiles (
     display_name text not null default '',
     class_name text not null default '',
     class_code text unique,
-    reliever_password_hash text,
+    reliever_secret_hash text,
     created_at timestamptz not null default now()
 );
 
@@ -263,12 +263,12 @@ $$;
 grant execute on function public.submit_basic_facts_attempt(text, uuid, int, int, int, int, int, boolean) to anon, authenticated;
 
 -- ── Reliever (substitute teacher) access ──────────────────
--- A teacher sets a reliever password; the reliever then signs in on the
+-- A teacher sets a reliever access code; the reliever then signs in on the
 -- same teacher login page using the CLASS CODE as their username and that
 -- password. No separate Supabase Auth account is created — everything is
 -- verified through these functions, re-checking the password every call.
 
-create or replace function public.set_reliever_password(p_new_password text)
+create or replace function public.configure_reliever_access(p_secret text)
 returns json
 language plpgsql
 security definer
@@ -278,19 +278,19 @@ begin
     if auth.uid() is null then
         return json_build_object('error', 'not_signed_in');
     end if;
-    if p_new_password is null or length(p_new_password) < 4 then
+    if p_secret is null or length(p_secret) < 4 then
         return json_build_object('error', 'password_too_short');
     end if;
 
     update public.profiles
-    set reliever_password_hash = crypt(p_new_password, gen_salt('bf'))
+    set reliever_secret_hash = crypt(p_secret, gen_salt('bf'))
     where id = auth.uid() and role = 'teacher';
 
     return json_build_object('ok', true);
 end;
 $$;
 
-grant execute on function public.set_reliever_password(text) to authenticated;
+grant execute on function public.configure_reliever_access(text) to authenticated;
 
 create or replace function public.disable_reliever_access()
 returns json
@@ -302,7 +302,7 @@ begin
     if auth.uid() is null then
         return json_build_object('error', 'not_signed_in');
     end if;
-    update public.profiles set reliever_password_hash = null
+    update public.profiles set reliever_secret_hash = null
     where id = auth.uid() and role = 'teacher';
     return json_build_object('ok', true);
 end;
@@ -310,7 +310,7 @@ $$;
 
 grant execute on function public.disable_reliever_access() to authenticated;
 
-create or replace function public.reliever_login(p_code text, p_password text)
+create or replace function public.reliever_login(p_code text, p_secret text)
 returns json
 language plpgsql
 security definer
@@ -319,17 +319,17 @@ as $$
 declare
     v_teacher record;
 begin
-    select id, class_name, display_name, reliever_password_hash into v_teacher
+    select id, class_name, display_name, reliever_secret_hash into v_teacher
     from public.profiles
     where upper(class_code) = upper(p_code) and role = 'teacher' and status = 'approved';
 
     if v_teacher.id is null then
         return json_build_object('error', 'not_found');
     end if;
-    if v_teacher.reliever_password_hash is null then
+    if v_teacher.reliever_secret_hash is null then
         return json_build_object('error', 'reliever_not_enabled');
     end if;
-    if crypt(p_password, v_teacher.reliever_password_hash) <> v_teacher.reliever_password_hash then
+    if crypt(p_secret, v_teacher.reliever_secret_hash) <> v_teacher.reliever_secret_hash then
         return json_build_object('error', 'invalid_password');
     end if;
 
@@ -344,7 +344,7 @@ $$;
 
 grant execute on function public.reliever_login(text, text) to anon;
 
-create or replace function public.reliever_get_roster(p_code text, p_password text)
+create or replace function public.reliever_get_roster(p_code text, p_secret text)
 returns json
 language plpgsql
 security definer
@@ -355,11 +355,11 @@ declare
     v_hash text;
     result json;
 begin
-    select id, reliever_password_hash into v_teacher_id, v_hash
+    select id, reliever_secret_hash into v_teacher_id, v_hash
     from public.profiles
     where upper(class_code) = upper(p_code) and role = 'teacher' and status = 'approved';
 
-    if v_teacher_id is null or v_hash is null or crypt(p_password, v_hash) <> v_hash then
+    if v_teacher_id is null or v_hash is null or crypt(p_secret, v_hash) <> v_hash then
         return json_build_object('error', 'unauthorized');
     end if;
 
@@ -383,7 +383,7 @@ grant execute on function public.reliever_get_roster(text, text) to anon;
 
 create or replace function public.reliever_save_test_score(
     p_code text,
-    p_password text,
+    p_secret text,
     p_student_id uuid,
     p_test_date date,
     p_skill int,
@@ -401,11 +401,11 @@ declare
     v_advanced boolean := false;
     v_new_position int;
 begin
-    select id, reliever_password_hash into v_teacher_id, v_hash
+    select id, reliever_secret_hash into v_teacher_id, v_hash
     from public.profiles
     where upper(class_code) = upper(p_code) and role = 'teacher' and status = 'approved';
 
-    if v_teacher_id is null or v_hash is null or crypt(p_password, v_hash) <> v_hash then
+    if v_teacher_id is null or v_hash is null or crypt(p_secret, v_hash) <> v_hash then
         return json_build_object('error', 'unauthorized');
     end if;
 

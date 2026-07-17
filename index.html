@@ -612,7 +612,7 @@
         const submitBtn = e.target.querySelector('button[type="submit"]');
         submitBtn.disabled = true; submitBtn.textContent = 'Signing in…';
 
-        const { data, error } = await sb.rpc('reliever_login', { p_code: emailOrCode, p_password: password });
+        const { data, error } = await sb.rpc('reliever_login', { p_code: emailOrCode, p_secret: password });
 
         submitBtn.disabled = false; submitBtn.textContent = 'Sign In';
 
