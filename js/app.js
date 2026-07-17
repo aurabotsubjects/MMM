@@ -847,7 +847,7 @@ async function saveAllScoresAsReliever(entries, date) {
     for (const { student, skill, score } of entries) {
         const { data, error } = await sb.rpc('reliever_save_test_score', {
             p_code: relieverAuth.code,
-            p_password: relieverAuth.password,
+            p_secret: relieverAuth.password,
             p_student_id: student.id,
             p_test_date: date,
             p_skill: skill,
@@ -1481,7 +1481,7 @@ function drawBfChart(canvasId, attempts, valueFn, maxVal, color) {
 async function loadRelieverData() {
     const { data, error } = await sb.rpc('reliever_get_roster', {
         p_code: relieverAuth.code,
-        p_password: relieverAuth.password
+        p_secret: relieverAuth.password
     });
     if (error || !data || data.error) {
         console.error(error || data);
@@ -1549,22 +1549,22 @@ async function saveRelieverPassword() {
         errEl.classList.add('show');
         return;
     }
-    const { data, error } = await sb.rpc('set_reliever_password', { p_new_password: pw });
+    const { data, error } = await sb.rpc('configure_reliever_access', { p_secret: pw });
     if (error) {
         // A truthy `error` here means the request itself failed (function
         // missing, pgcrypto not enabled, etc) rather than a normal rejection
         // from inside the function — surfacing it directly is the fastest
         // way to tell which of those it is.
-        console.error('set_reliever_password RPC error:', error);
+        console.error('configure_reliever_access RPC error:', error);
         errEl.textContent = 'Could not save: ' + (error.message || 'unknown error');
         errEl.classList.add('show');
         return;
     }
     if (!data || data.error) {
-        console.error('set_reliever_password returned an error:', data);
+        console.error('configure_reliever_access returned an error:', data);
         let msg = 'Could not save — please try again';
         if (data && data.error === 'not_signed_in') msg = 'You need to be logged in to set a reliever password. Try logging out and back in.';
-        else if (data && data.error === 'password_too_short') msg = 'Password must be at least 4 characters.';
+        else if (data && data.error === 'too_short') msg = 'Password must be at least 4 characters.';
         errEl.textContent = msg;
         errEl.classList.add('show');
         return;
